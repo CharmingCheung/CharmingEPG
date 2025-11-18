@@ -1,4 +1,5 @@
 import asyncio
+import os
 from datetime import datetime
 from typing import List
 
@@ -396,6 +397,7 @@ async def generate_all_platforms_cache():
             logger.info(f"✨ 成功生成all缓存: {total_channels}个频道和{total_programs}个节目")
         else:
             logger.error("❌ 保存all缓存文件失败")
+            return
 
         # Generate gzip compressed version
         compressed_xml = gzip.compress(merged_xml, compresslevel=9)
@@ -411,6 +413,29 @@ async def generate_all_platforms_cache():
             logger.info(f"📦 成功生成all.gz压缩缓存: {len(compressed_xml)} 字节 (压缩至原来的 {compression_ratio:.1f}%，节省 {saved_ratio:.1f}%)")
         except Exception as gz_error:
             logger.error(f"❌ 保存all.gz压缩文件失败: {gz_error}")
+            return
+
+        # Delete old all EPG files (both .xml and .xml.gz)
+        EPGFileManager.delete_old_epg_files("all")
+
+        # Also delete old .gz files
+        try:
+            current_date = datetime.now().strftime('%Y%m%d')
+            current_gz_file = f"all_{current_date}.xml.gz"
+            epg_dir = os.path.dirname(gz_file_path)
+
+            deleted_gz_count = 0
+            for file_name in os.listdir(epg_dir):
+                if file_name.endswith(".xml.gz") and file_name != current_gz_file:
+                    old_gz_path = os.path.join(epg_dir, file_name)
+                    os.remove(old_gz_path)
+                    deleted_gz_count += 1
+                    logger.debug(f"🗑️ 删除旧压缩文件: {file_name}")
+
+            if deleted_gz_count > 0:
+                logger.info(f"🧹 清理all的{deleted_gz_count}个旧压缩文件")
+        except Exception as cleanup_error:
+            logger.error(f"❌ 清理旧压缩文件失败: {cleanup_error}")
 
     except Exception as e:
         logger.error(f"💥 生成all缓存时发生错误: {e}", exc_info=True)
