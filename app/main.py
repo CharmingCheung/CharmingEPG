@@ -372,9 +372,11 @@ async def generate_all_platforms_cache():
                         platform_channels += 1
 
                         # Add all programs for this channel
-                        for programme in platform_root.findall(f"./programme[@channel='{channel_id}']"):
-                            merged_root.append(programme)
-                            platform_programs += 1
+                        # Use manual filtering instead of XPath to avoid issues with special characters
+                        for programme in platform_root.findall("./programme"):
+                            if programme.get("channel") == channel_id:
+                                merged_root.append(programme)
+                                platform_programs += 1
 
                 total_channels += platform_channels
                 total_programs += platform_programs
@@ -462,7 +464,6 @@ async def update_all_enabled_platforms():
     # Process results and log any exceptions
     success_count = 0
     error_count = 0
-    any_platform_updated = False
 
     for i, result in enumerate(results):
         platform_config = enabled_platforms[i]

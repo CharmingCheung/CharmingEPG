@@ -12,10 +12,29 @@ def has_chinese(text):
 
 
 def remove_brackets(text):
-    pattern = r'[（(][^（()）]*[）)]'
-    while re.search(pattern, text):
-        text = re.sub(pattern, '', text)
-    return text.strip()
+    """
+    Remove all content within brackets (including nested brackets).
+    Handles both Chinese（）and English () brackets.
+
+    Examples:
+        "SUPER EYT (免費)(12月22日6時起改為'觀眾票選-追劇馬拉松 (免費)'" -> "SUPER EYT"
+        "Channel (HD) (Test)" -> "Channel"
+        "Nested (outer (inner) text)" -> "Nested"
+    """
+    result = []
+    depth = 0  # Track bracket nesting depth
+
+    for char in text:
+        if char in '（(':
+            depth += 1
+        elif char in '）)':
+            depth = max(0, depth - 1)  # Prevent negative depth
+        elif depth == 0:
+            result.append(char)
+
+    # Clean up multiple consecutive spaces
+    cleaned = ''.join(result).strip()
+    return re.sub(r'\s+', ' ', cleaned)
 
 
 def utc_and_duration_to_local(start_time, duration):
