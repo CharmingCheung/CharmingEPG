@@ -127,7 +127,7 @@ class MeWatchPlatform(BaseEPGPlatform):
         # Create tasks for all 7 days concurrently
         date_tasks = []
         for day_offset in range(7):
-            target_date = today + timedelta(days=day_offset)
+            target_date = today + timedelta(days=day_offset-1)
             date_str = target_date.strftime('%Y-%m-%d')
             date_tasks.append(self._fetch_day_programs(channel, date_str, session))
 
