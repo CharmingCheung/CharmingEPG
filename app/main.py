@@ -16,6 +16,7 @@ from .epg_platform.HOY import get_hoy_epg
 from .epg_platform.NowTV import request_nowtv_today_epg
 from .epg_platform.RTHK import get_rthk_epg
 from .epg_platform.Starhub import get_starhub_epg
+from .epg_platform.MeWatch import get_mewatch_epg
 
 logger = get_logger(__name__)
 
@@ -250,6 +251,33 @@ async def request_starhub_epg():
             return
 
         channels, programs = await get_starhub_epg()
+        if not channels:
+            logger.warning(f"⚠️ 未找到{platform}的频道数据")
+            return
+
+        response_xml = await gen_channel(channels, programs)
+
+        if EPGFileManager.save_epg_file(platform, response_xml):
+            EPGFileManager.delete_old_epg_files(platform)
+            logger.info(f"✨ 成功更新{platform}的EPG数据")
+        else:
+            logger.error(f"❌ 保存{platform}的EPG文件失败")
+
+    except Exception as e:
+        logger.error(f"💥 更新{platform}的EPG数据时发生错误: {e}", exc_info=True)
+
+
+async def request_mewatch_epg():
+    """Update MeWatch EPG data"""
+    platform = "mewatch"
+    logger.info(f"📺 正在更新平台EPG数据: {platform}")
+
+    try:
+        if EPGFileManager.read_epg_file(platform) is not None:
+            logger.info(f"✅ 今日{platform}的EPG数据已存在，跳过更新")
+            return
+
+        channels, programs = await get_mewatch_epg()
         if not channels:
             logger.warning(f"⚠️ 未找到{platform}的频道数据")
             return

@@ -64,6 +64,7 @@ class Config:
         {"platform": "rthk", "name": "RTHK", "fetcher": "request_rthk_epg"},
         {"platform": "hoy", "name": "HOY", "fetcher": "request_hoy_epg"},
         {"platform": "starhub", "name": "StarHub", "fetcher": "request_starhub_epg"},
+        {"platform": "mewatch", "name": "MeWatch", "fetcher": "request_mewatch_epg"},
         {"platform": "cn", "name": "CN (epg.pw)", "fetcher": "request_cn_epg"},
     ]
 
