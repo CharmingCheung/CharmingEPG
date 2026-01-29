@@ -1,8 +1,7 @@
-import re
 import asyncio
 import aiohttp
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List
 from zoneinfo import ZoneInfo
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
@@ -16,64 +15,18 @@ logger = get_logger(__name__)
 class MeWatchPlatform(BaseEPGPlatform):
     """MeWatch EPG platform implementation for Singapore"""
 
+    # Fixed list ID for channel guide (geo-independent)
+    CHANNEL_LIST_ID = "239614"
+
     def __init__(self):
         super().__init__("mewatch")
         self.base_url = "https://cdn.mewatch.sg/api"
-        self.channel_guide_url = "https://www.mewatch.sg/channel-guide"
-        self._list_id: Optional[str] = None
-
-    async def _get_channel_list_id(self) -> str:
-        """
-        Extract the channel list ID from the channel guide HTML page.
-        Falls back to a known default if extraction fails.
-        """
-        if self._list_id:
-            return self._list_id
-
-        try:
-            self.logger.info("📡 正在从 MeWatch 频道指南页面提取 list ID")
-
-            headers = self.get_default_headers()
-            response = self.http_client.get(self.channel_guide_url, headers=headers)
-            html = response.text
-
-            # Extract list ID from the /channel-guide page configuration
-            # Pattern: look for "/channel-guide" followed by "list" object with "id"
-            pattern = r'/channel-guide[^}]*"list"[^}]*"id":\s*"(\d+)"'
-            matches = re.findall(pattern, html, re.DOTALL)
-
-            if matches:
-                self._list_id = matches[0]
-                self.logger.info(f"✅ 成功提取 list ID: {self._list_id}")
-                return self._list_id
-            else:
-                # Fallback: try a simpler pattern
-                simple_pattern = r'"list":\s*\{[^}]{0,500}"id":\s*"(\d+)"'
-                simple_matches = re.findall(simple_pattern, html)
-
-                if simple_matches:
-                    # Use the first occurrence as fallback
-                    self._list_id = simple_matches[0]
-                    self.logger.warning(f"⚠️ 使用备用模式提取 list ID: {self._list_id}")
-                    return self._list_id
-
-            # If all extraction attempts fail, use hardcoded default
-            self._list_id = "239614"
-            self.logger.warning(f"⚠️ 无法从页面提取 list ID，使用默认值: {self._list_id}")
-            return self._list_id
-
-        except Exception as e:
-            self.logger.error(f"❌ 提取 list ID 失败: {e}")
-            self._list_id = "239614"
-            self.logger.warning(f"⚠️ 使用默认 list ID: {self._list_id}")
-            return self._list_id
 
     async def fetch_channels(self) -> List[Channel]:
         """Fetch channel list from MeWatch API with pagination support"""
         self.logger.info("📡 正在从 MeWatch 获取频道列表")
 
-        # Get the list ID (will be cached after first call)
-        list_id = await self._get_channel_list_id()
+        list_id = self.CHANNEL_LIST_ID
 
         all_channels = []
         page = 1
@@ -114,12 +67,8 @@ class MeWatchPlatform(BaseEPGPlatform):
                         raw_data=item
                     ))
 
-            # Check if there are more pages
-            metadata = data.get('metadata', {})
-            total_count = metadata.get('totalCount', 0)
-            current_items = page * page_size
-
-            if current_items >= total_count:
+            # If we got fewer items than page_size, we've reached the last page
+            if len(items) < page_size:
                 break
 
             page += 1
