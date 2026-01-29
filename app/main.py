@@ -481,42 +481,51 @@ async def update_all_enabled_platforms():
 
     logger.info(f"🔄 开始更新{len(enabled_platforms)}个启用平台的EPG数据")
 
-    tasks = [
-        globals()[conf["fetcher"]]()
-        for conf in enabled_platforms
-    ]
+    # ===== 记录更新前各平台文件时间 =====
+    platform_mtime_before = {}
+    for conf in enabled_platforms:
+        platform = conf["platform"]
+        path = EPGFileManager.get_epg_file_path(platform)
+        platform_mtime_before[platform] = os.path.getmtime(path) if os.path.exists(path) else 0
 
-    # Execute all tasks in parallel
+    # ===== 并发执行更新 =====
+    tasks = [globals()[conf["fetcher"]]() for conf in enabled_platforms]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Process results and log any exceptions
+    # ===== 统计结果 =====
     success_count = 0
     error_count = 0
+    any_updated = False
 
     for i, result in enumerate(results):
-        platform_config = enabled_platforms[i]
-        platform_name = platform_config["name"]
+        platform_conf = enabled_platforms[i]
+        platform = platform_conf["platform"]
+        platform_name = platform_conf["name"]
 
         if isinstance(result, Exception):
             error_count += 1
             logger.error(f"❌ 更新{platform_name}的EPG数据失败: {result}", exc_info=True)
-        else:
-            success_count += 1
-            logger.debug(f"✅ 成功更新{platform_name}的EPG数据")
+            continue
+
+        success_count += 1
+
+        # 对比文件更新时间
+        path = EPGFileManager.get_epg_file_path(platform)
+        if os.path.exists(path):
+            if os.path.getmtime(path) > platform_mtime_before.get(platform, 0):
+                any_updated = True
+                logger.info(f"🔁 检测到 {platform} 的EPG数据发生变化")
 
     logger.info(f"🎯 EPG数据更新完成: {success_count}个成功，{error_count}个失败")
 
-    # Check if all cache exists, if not, we need to generate it
+    # ===== 决定是否生成 all =====
     all_cache_exists = EPGFileManager.read_epg_file("all") is not None
 
-    # Generate merged cache for /all endpoint if:
-    # 1. Cache doesn't exist (first run or new day)
-    # 2. At least one platform was updated successfully
-    if not all_cache_exists:
-        logger.info("📝 all缓存不存在，开始生成")
+    if not all_cache_exists or any_updated:
+        logger.info("📝 需要重新生成all缓存")
         await generate_all_platforms_cache()
     else:
-        logger.info("✅ all缓存已存在且所有平台均未更新，跳过重新生成")
+        logger.info("✅ all缓存已存在且本轮无平台更新，跳过重新生成")
 
 
 @app.on_event("startup")
