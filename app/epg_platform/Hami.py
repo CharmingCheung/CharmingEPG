@@ -1,8 +1,12 @@
+import asyncio
+import aiohttp
 import pytz
 from datetime import datetime, timedelta
 from typing import List
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from ..logger import get_logger
+from ..config import Config
 from .base import BaseEPGPlatform, Channel, Program
 
 logger = get_logger(__name__)
@@ -63,81 +67,111 @@ class HamiPlatform(BaseEPGPlatform):
         return channels
 
     async def fetch_programs(self, channels: List[Channel]) -> List[Program]:
-        """Fetch program data for all channels"""
-        self.logger.info(f"📡 正在抓取 {len(channels)} 个频道的节目数据")
+        """Fetch program data for all channels with concurrency limit"""
+        concurrency = 5
+        self.logger.info(f"📡 正在抓取 {len(channels)} 个频道的节目数据 (并发数: {concurrency})")
+
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def fetch_with_semaphore(channel: Channel, session: aiohttp.ClientSession):
+            async with semaphore:
+                return await self._fetch_channel_programs(channel, session)
+
+        # Use a single shared session for all requests
+        timeout = aiohttp.ClientTimeout(total=Config.HTTP_TIMEOUT)
+        headers = self.get_platform_headers()
+
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            tasks = [fetch_with_semaphore(channel, session) for channel in channels]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
         all_programs = []
-        for channel in channels:
-            try:
-                programs = await self._fetch_channel_programs(
-                    channel.name,
-                    channel.extra_data.get('content_pk')
-                )
-                all_programs.extend(programs)
-            except Exception as e:
-                self.logger.error(f"❌ 获取频道 {channel.name} 节目数据失败: {e}")
-                continue
+        error_count = 0
 
-        self.logger.info(f"📊 总共抓取了 {len(all_programs)} 个节目")
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                error_count += 1
+                self.logger.error(f"❌ 获取频道 {channels[i].name} 节目数据失败: {result}")
+            else:
+                all_programs.extend(result)
+
+        self.logger.info(f"📊 总共抓取了 {len(all_programs)} 个节目 (成功: {len(channels) - error_count}, 失败: {error_count})")
         return all_programs
 
-    async def _fetch_channel_programs(self, channel_name: str, content_pk: str) -> List[Program]:
-        """Fetch program data for a specific channel"""
+    async def _fetch_channel_programs(self, channel: Channel, session: aiohttp.ClientSession) -> List[Program]:
+        """Fetch program data for a specific channel (7 days concurrently)"""
+        channel_name = channel.name
+        content_pk = channel.extra_data.get('content_pk')
+
         self.logger.info(f"🔍【Hami】 正在获取频道节目: {channel_name}")
 
-        programs = []
-
-        # Fetch EPG data for 7 days
+        # Create tasks for all 7 days concurrently
+        date_tasks = []
         for i in range(7):
-            try:
-                date = datetime.now() + timedelta(days=i)
-                formatted_date = date.strftime('%Y-%m-%d')
+            date = datetime.now() + timedelta(days=i)
+            formatted_date = date.strftime('%Y-%m-%d')
+            date_tasks.append(self._fetch_day_programs(content_pk, formatted_date, session))
 
-                params = {
-                    "deviceType": "1",
-                    "Date": formatted_date,
-                    "contentPk": content_pk,
-                }
+        # Execute all date requests concurrently
+        results = await asyncio.gather(*date_tasks, return_exceptions=True)
 
-                response = self.http_client.get(
-                    f"{self.base_url}/getEpgByContentIdAndDate.php",
-                    headers=self.get_platform_headers(),
-                    params=params
-                )
-
-                data = response.json()
-                ui_info = data.get('UIInfo', [])
-
-                if ui_info and len(ui_info) > 0:
-                    elements = ui_info[0].get('elements', [])
-
-                    for element in elements:
-                        program_info_list = element.get('programInfo', [])
-                        if program_info_list:
-                            program_info = program_info_list[0]
-                            hint_se = program_info.get('hintSE')
-
-                            if hint_se:
-                                try:
-                                    start_time, end_time = self._parse_hami_time(hint_se)
-
-                                    programs.append(Program(
-                                        channel_id=content_pk,
-                                        title=program_info.get('programName', ''),
-                                        start_time=start_time,
-                                        end_time=end_time,
-                                        description="",
-                                        raw_data=program_info
-                                    ))
-                                except Exception as e:
-                                    self.logger.warning(f"⚠️ 解析节目时间失败: {e}")
-                                    continue
-
-            except Exception as e:
-                self.logger.warning(f"⚠️ 获取 {channel_name} 第 {i} 天的 EPG 数据失败: {e}")
-                continue
+        programs = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                self.logger.warning(f"⚠️ 获取 {channel_name} 第 {i} 天的 EPG 数据失败: {result}")
+            else:
+                programs.extend(result)
 
         self.logger.debug(f"📺 在 {channel_name} 中发现 {len(programs)} 个节目")
+        return programs
+
+    @retry(
+        stop=stop_after_attempt(Config.HTTP_MAX_RETRIES),
+        wait=wait_exponential(multiplier=Config.HTTP_RETRY_BACKOFF),
+        retry=retry_if_exception_type((aiohttp.ClientError, asyncio.TimeoutError)),
+        reraise=True
+    )
+    async def _fetch_day_programs(self, content_pk: str, date_str: str, session: aiohttp.ClientSession) -> List[Program]:
+        """Fetch program data for a specific channel on a specific day (async)"""
+        params = {
+            "deviceType": "1",
+            "Date": date_str,
+            "contentPk": content_pk,
+        }
+
+        url = f"{self.base_url}/getEpgByContentIdAndDate.php"
+
+        async with session.get(url, params=params) as response:
+            data = await response.json()
+
+        programs = []
+        ui_info = data.get('UIInfo', [])
+
+        if ui_info and len(ui_info) > 0:
+            elements = ui_info[0].get('elements', [])
+
+            for element in elements:
+                program_info_list = element.get('programInfo', [])
+                if program_info_list:
+                    program_info = program_info_list[0]
+                    hint_se = program_info.get('hintSE')
+
+                    if hint_se:
+                        try:
+                            start_time, end_time = self._parse_hami_time(hint_se)
+
+                            programs.append(Program(
+                                channel_id=content_pk,
+                                title=program_info.get('programName', ''),
+                                start_time=start_time,
+                                end_time=end_time,
+                                description="",
+                                raw_data=program_info
+                            ))
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ 解析节目时间失败: {e}")
+                            continue
+
         return programs
 
     def _parse_hami_time(self, time_range: str):
@@ -209,7 +243,13 @@ async def request_all_epg():
 async def request_epg(channel_name: str, content_pk: str):
     """Legacy function - fetch EPG for specific channel"""
     try:
-        programs = await hami_platform._fetch_channel_programs(channel_name, content_pk)
+        # Create a temporary channel and session for legacy compatibility
+        channel = Channel(channel_id=content_pk, name=channel_name, content_pk=content_pk)
+        timeout = aiohttp.ClientTimeout(total=Config.HTTP_TIMEOUT)
+        headers = hami_platform.get_platform_headers()
+
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            programs = await hami_platform._fetch_channel_programs(channel, session)
 
         # Convert to legacy format
         result = []

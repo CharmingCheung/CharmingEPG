@@ -1,8 +1,10 @@
 import re
+import asyncio
 import aiohttp
 from datetime import datetime, timedelta
 from typing import List, Optional
 from zoneinfo import ZoneInfo
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from ..logger import get_logger
 from ..config import Config
@@ -196,6 +198,12 @@ class MeWatchPlatform(BaseEPGPlatform):
         self.logger.debug(f"📺 在 {channel.name} 中发现 {len(all_programs)} 个节目")
         return all_programs
 
+    @retry(
+        stop=stop_after_attempt(Config.HTTP_MAX_RETRIES),
+        wait=wait_exponential(multiplier=Config.HTTP_RETRY_BACKOFF),
+        retry=retry_if_exception_type((aiohttp.ClientError, asyncio.TimeoutError)),
+        reraise=True
+    )
     async def _fetch_day_programs(self, channel: Channel, date_str: str, session: aiohttp.ClientSession) -> List[Program]:
         """Fetch program data for a specific channel on a specific day (async)"""
         schedules_url = f"{self.base_url}/schedules"

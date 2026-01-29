@@ -84,7 +84,7 @@ class MyTvSuperPlatform(BaseEPGPlatform):
         """Fetch program data for a specific channel"""
         self.logger.info(f"🔍 【myTV SUPER】 正在获取频道节目: {channel_name}")
 
-        # Get date range (today + 7 days)
+        # Get date range (yesterday + 7 days)
         start_date = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
         end_date = (datetime.now() + timedelta(days=7)).strftime('%Y%m%d')
 

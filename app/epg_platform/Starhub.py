@@ -1,8 +1,12 @@
+import asyncio
+import aiohttp
 from datetime import datetime, timedelta
 from typing import List
 from zoneinfo import ZoneInfo
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from ..logger import get_logger
+from ..config import Config
 from ..utils import has_chinese, utc_to_utc8_datetime
 from .base import BaseEPGPlatform, Channel, Program
 
@@ -53,24 +57,44 @@ class StarhubPlatform(BaseEPGPlatform):
         return channels
 
     async def fetch_programs(self, channels: List[Channel]) -> List[Program]:
-        """Fetch program data for all StarHub channels"""
-        self.logger.info(f"📡 正在抓取 {len(channels)} 个 StarHub 频道的节目数据")
+        """Fetch program data for all StarHub channels with concurrency limit"""
+        concurrency = 10
+        self.logger.info(f"📡 正在抓取 {len(channels)} 个 StarHub 频道的节目数据 (并发数: {concurrency})")
+
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def fetch_with_semaphore(channel: Channel, session: aiohttp.ClientSession):
+            async with semaphore:
+                return await self._fetch_channel_programs(channel, session)
+
+        timeout = aiohttp.ClientTimeout(total=Config.HTTP_TIMEOUT)
+        headers = self.get_default_headers()
+
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            tasks = [fetch_with_semaphore(channel, session) for channel in channels]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
         all_programs = []
+        error_count = 0
 
-        for channel in channels:
-            try:
-                programs = await self._fetch_channel_programs(channel)
-                all_programs.extend(programs)
-            except Exception as e:
-                self.logger.error(f"❌ 获取频道 {channel.name} 节目数据失败: {e}")
-                continue
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                error_count += 1
+                self.logger.error(f"❌ 获取频道 {channels[i].name} 节目数据失败: {result}")
+            else:
+                all_programs.extend(result)
 
-        self.logger.info(f"📊 总共抓取了 {len(all_programs)} 个节目")
+        self.logger.info(f"📊 总共抓取了 {len(all_programs)} 个节目 (成功: {len(channels) - error_count}, 失败: {error_count})")
         return all_programs
 
-    async def _fetch_channel_programs(self, channel: Channel) -> List[Program]:
-        """Fetch program data for a specific StarHub channel"""
+    @retry(
+        stop=stop_after_attempt(Config.HTTP_MAX_RETRIES),
+        wait=wait_exponential(multiplier=Config.HTTP_RETRY_BACKOFF),
+        retry=retry_if_exception_type((aiohttp.ClientError, asyncio.TimeoutError)),
+        reraise=True
+    )
+    async def _fetch_channel_programs(self, channel: Channel, session: aiohttp.ClientSession) -> List[Program]:
+        """Fetch program data for a specific StarHub channel (async)"""
         self.logger.info(f"🔍【Starhub】 正在获取频道节目: {channel.name} (ID: {channel.channel_id})")
 
         # Calculate time range (today to 6 days later)
@@ -81,8 +105,6 @@ class StarhubPlatform(BaseEPGPlatform):
 
         today_timestamp = int(today_start.timestamp())
         six_days_later_timestamp = int(six_days_later_end.timestamp())
-
-        headers = self.get_default_headers()
 
         params = {
             "locale": "zh",
@@ -95,13 +117,9 @@ class StarhubPlatform(BaseEPGPlatform):
             "lt_start": str(six_days_later_timestamp),  # End time
         }
 
-        response = self.http_client.get(
-            self.schedules_url,
-            headers=headers,
-            params=params
-        )
+        async with session.get(self.schedules_url, params=params) as response:
+            data = await response.json()
 
-        data = response.json()
         programs = []
 
         for resource in data.get('resources', []):
@@ -165,27 +183,30 @@ def request_epg(channel_id, channel_name):
     """Legacy function - get EPG for specific channel (synchronous)"""
     try:
         import asyncio
+
+        async def _fetch():
+            channel = Channel(channel_id=channel_id, name=channel_name)
+            timeout = aiohttp.ClientTimeout(total=Config.HTTP_TIMEOUT)
+            headers = starhub_platform.get_default_headers()
+
+            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                programs = await starhub_platform._fetch_channel_programs(channel, session)
+
+            # Convert to legacy format
+            return [{
+                "channelName": channel_name,
+                "programName": p.title,
+                "description": p.description,
+                "start": p.start_time,
+                "end": p.end_time
+            } for p in programs]
+
         loop = asyncio.get_event_loop()
         if loop.is_running():
             logger.warning("⚠️ 在异步上下文中调用旧版 request_epg - 返回空列表")
             return []
         else:
-            # Create a temporary channel object
-            channel = Channel(channel_id=channel_id, name=channel_name)
-            programs = loop.run_until_complete(starhub_platform._fetch_channel_programs(channel))
-
-            # Convert to legacy format
-            program_list = []
-            for program in programs:
-                program_list.append({
-                    "channelName": channel_name,
-                    "programName": program.title,
-                    "description": program.description,
-                    "start": program.start_time,
-                    "end": program.end_time
-                })
-
-            return program_list
+            return loop.run_until_complete(_fetch())
     except Exception as e:
         logger.error(f"❌ 旧版 request_epg 错误: {e}")
         return []
