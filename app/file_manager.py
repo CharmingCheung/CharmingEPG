@@ -140,7 +140,7 @@ class EPGFileManager:
 
         merged_root = ET.Element("tv")
         merged_root.set("generator-info-name", f"{Config.APP_NAME} v{Config.APP_VERSION}")
-        merged_root.set("generator-info-url", "https://github.com/your-repo/CharmingEPG")
+        merged_root.set("generator-info-url", "https://github.com/CharmingCheung/CharmingEPG")
 
         channels_seen = set()
         total_channels = 0
