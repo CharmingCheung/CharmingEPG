@@ -126,6 +126,9 @@ class StarhubPlatform(BaseEPGPlatform):
             if resource.get('metatype') == 'Schedule':
                 try:
                     title = resource.get('title', '')
+                    serie_title = resource.get('serie_title', '')
+                    if serie_title:
+                        title = f"{serie_title} - {title}"
                     description = resource.get('description', '')
                     episode_number = resource.get('episode_number')
 
