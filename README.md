@@ -116,5 +116,14 @@ http://[ip]:[port]/all.xml.gz #gzip压缩包
 #### 请求单个或多个平台
 
 ```
+http://[ip]:[port]/epg/tvb
+http://[ip]:[port]/epg/nowtv
+http://[ip]:[port]/epg/rthk
+http://[ip]:[port]/epg/hoy
+http://[ip]:[port]/epg/hami
+http://[ip]:[port]/epg/astro
+http://[ip]:[port]/epg/starhub
+http://[ip]:[port]/epg/mewatch
+http://[ip]:[port]/epg/cn
 http://[ip]:[port]/epg?platforms=tvb,nowtv,rthk,hoy,hami,astro,starhub,mewatch,cn
 ```
