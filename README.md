@@ -10,6 +10,7 @@
 - Astro Go（中文台都是中文描述）
 - StarHub（中文台都是中文描述）
 - Mewatch
+- Singtel (有IP限制，如需代理请设置SINGTEL_PROXY)
 - CN
 
 ## Feature
@@ -33,6 +34,7 @@ EPG_ENABLE_RTHK=false
 EPG_ENABLE_HOY=false
 EPG_ENABLE_STARHUB=false
 EPG_ENABLE_MEWATCH=false
+EPG_ENABLE_SINGTEL=false
 #支持`1`/`0` `yes`/`no` `true`/`false` `on`/`off`
 #这些配置已经在`docker-compose.example.yml`中列好，自行配置即可。
 
@@ -53,6 +55,12 @@ HTTP_MAX_RETRIES=3 #默认3次重试
 #Proxy
 PROXY_HTTP=http://proxy.example.com:8080
 PROXY_HTTPS=http://proxy.example.com:8080
+
+#Singtel专属代理（Singtel接口有IP地区限制，需要新加坡IP）
+#支持 http/https/socks5/socks5h，例如：
+#SINGTEL_PROXY=socks5://user:pass@host:1080
+#SINGTEL_PROXY=http://host:8080
+SINGTEL_PROXY=
 ```
 
 
@@ -75,6 +83,8 @@ services:
       - EPG_ENABLE_HOY=true
       - EPG_ENABLE_STARHUB=true
       - EPG_ENABLE_MEWATCH=true
+      - EPG_ENABLE_SINGTEL=true
+      - SINGTEL_PROXY=socks5://user:pass@host:1080
       - TZ=Asia/Shanghai
       - EPG_CACHE_TTL=3600
     volumes:
@@ -101,6 +111,8 @@ docker run -d \
   -e EPG_ENABLE_HOY=false \
   -e EPG_ENABLE_MEWATCH=false \
   -e EPG_ENABLE_STARHUB=false \
+  -e EPG_ENABLE_SINGTEL=false \
+  -e SINGTEL_PROXY=socks5://user:pass@host:1080 \
   charmingcheung000/charming-epg:latest
 ```
 
@@ -116,5 +128,5 @@ http://[ip]:[port]/all.xml.gz #gzip压缩包
 #### 请求单个或多个平台
 
 ```
-http://[ip]:[port]/epg?platforms=tvb,nowtv,rthk,hoy,hami,astro,starhub,mewatch,cn
+http://[ip]:[port]/epg?platforms=tvb,nowtv,rthk,hoy,hami,astro,starhub,mewatch,singtel,cn
 ```

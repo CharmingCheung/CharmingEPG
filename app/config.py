@@ -33,6 +33,11 @@ class Config:
     PROXY_HTTP = os.getenv("PROXY_HTTP")
     PROXY_HTTPS = os.getenv("PROXY_HTTPS")
 
+    # Singtel-specific proxy (Singtel API is geo-restricted to Singapore IPs)
+    # Supports http://, https://, socks5://, socks5h:// URL schemes
+    # Example: socks5://user:pass@host:1080 or http://host:8080
+    SINGTEL_PROXY = os.getenv("SINGTEL_PROXY")
+
     @classmethod
     def get_proxies(cls) -> Optional[Dict[str, str]]:
         """Get proxy configuration if available"""
@@ -42,6 +47,12 @@ class Config:
                 "https": cls.PROXY_HTTPS
             }
         return None
+
+    @classmethod
+    def get_singtel_proxy(cls) -> Optional[str]:
+        """Get Singtel-specific proxy URL (returns single URL string)"""
+        proxy = (cls.SINGTEL_PROXY or "").strip()
+        return proxy or None
 
     @classmethod
     def platform_enabled(cls, platform: str) -> bool:
@@ -65,6 +76,7 @@ class Config:
         {"platform": "hoy", "name": "HOY", "fetcher": "request_hoy_epg"},
         {"platform": "starhub", "name": "StarHub", "fetcher": "request_starhub_epg"},
         {"platform": "mewatch", "name": "MeWatch", "fetcher": "request_mewatch_epg"},
+        {"platform": "singtel", "name": "Singtel", "fetcher": "request_singtel_epg"},
         {"platform": "cn", "name": "CN (epg.pw)", "fetcher": "request_cn_epg"},
     ]
 
