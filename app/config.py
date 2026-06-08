@@ -77,6 +77,7 @@ class Config:
         {"platform": "starhub", "name": "StarHub", "fetcher": "request_starhub_epg"},
         {"platform": "mewatch", "name": "MeWatch", "fetcher": "request_mewatch_epg"},
         {"platform": "singtel", "name": "Singtel", "fetcher": "request_singtel_epg"},
+        {"platform": "unifitv", "name": "UnifiTV", "fetcher": "request_unifitv_epg"},
         {"platform": "cn", "name": "CN (epg.pw)", "fetcher": "request_cn_epg"},
     ]
 
