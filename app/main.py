@@ -1,5 +1,7 @@
 import asyncio
 import os
+import time
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import List
 
@@ -19,6 +21,8 @@ from .epg_platform.Starhub import get_starhub_epg
 from .epg_platform.MeWatch import get_mewatch_epg
 from .epg_platform.Singtel import get_singtel_epg
 from .epg_platform.UnifiTV import get_unifitv_epg
+from .epg_platform.FengShows import get_fengshows_epg
+from .epg_platform.FourGTV import get_4gtv_epg
 
 logger = get_logger(__name__)
 
@@ -45,6 +49,45 @@ async def root():
 
 # Create scheduler instance
 scheduler = AsyncIOScheduler()
+
+# Guards against overlapping update runs (e.g. the startup task overlapping the
+# first scheduled tick), which would otherwise double-crawl slow platforms.
+_update_lock = asyncio.Lock()
+
+# ===== /status caching =====
+# EPG files change at most once per update cycle, so the status response is
+# cached to keep the endpoint cheap even under heavy request volume:
+#  - _status_response_cache: whole response, refreshed at most once per TTL
+#  - _status_count_cache:    per-platform (channel/program) counts, reused while
+#                            the file's path + mtime are unchanged (no re-parse)
+_STATUS_CACHE_TTL = 30  # seconds
+_status_response_cache = {"ts": 0.0, "data": None}
+_status_count_cache = {}  # platform -> (path, mtime, channels, programs, parse_status)
+
+
+def _epg_file_counts(platform: str):
+    """Return (date_str, (channels, programs, parse_status)) for a platform's
+    latest EPG file, parsing the XML only when the file actually changed."""
+    date_str, path = EPGFileManager.get_latest_epg_file(platform)
+    if not path or not os.path.exists(path):
+        return date_str, None
+
+    mtime = os.path.getmtime(path)
+    cached = _status_count_cache.get(platform)
+    if cached and cached[0] == path and cached[1] == mtime:
+        return date_str, (cached[2], cached[3], cached[4])
+
+    try:
+        with open(path, "rb") as f:
+            root = ET.fromstring(f.read())
+        channels = len(root.findall("./channel"))
+        programs = len(root.findall("./programme"))
+        parse_status = "ok"
+    except Exception:
+        channels, programs, parse_status = 0, 0, "invalid"
+
+    _status_count_cache[platform] = (path, mtime, channels, programs, parse_status)
+    return date_str, (channels, programs, parse_status)
 
 
 @scheduler.scheduled_job('interval', minutes=Config.EPG_UPDATE_INTERVAL)
@@ -109,7 +152,7 @@ async def request_hami_epg():
 
 
 async def request_cn_epg():
-    """Update CN (epg.pw) EPG data"""
+    """Update CN  EPG data"""
     platform = "cn"
     logger.info(f"📺 正在更新平台EPG数据: {platform}")
 
@@ -350,6 +393,60 @@ async def request_unifitv_epg():
         logger.error(f"💥 更新{platform}的EPG数据时发生错误: {e}", exc_info=True)
 
 
+async def request_fengshows_epg():
+    """Update FengShows EPG data"""
+    platform = "fengshows"
+    logger.info(f"📺 正在更新平台EPG数据: {platform}")
+
+    try:
+        if EPGFileManager.read_epg_file(platform) is not None:
+            logger.info(f"✅ 今日{platform}的EPG数据已存在，跳过更新")
+            return
+
+        channels, programs = await get_fengshows_epg()
+        if not channels:
+            logger.warning(f"⚠️ 未找到{platform}的频道数据")
+            return
+
+        response_xml = await gen_channel(channels, programs)
+
+        if EPGFileManager.save_epg_file(platform, response_xml):
+            EPGFileManager.delete_old_epg_files(platform)
+            logger.info(f"✨ 成功更新{platform}的EPG数据")
+        else:
+            logger.error(f"❌ 保存{platform}的EPG文件失败")
+
+    except Exception as e:
+        logger.error(f"💥 更新{platform}的EPG数据时发生错误: {e}", exc_info=True)
+
+
+async def request_4gtv_epg():
+    """Update 4GTV EPG data"""
+    platform = "4gtv"
+    logger.info(f"📺 正在更新平台EPG数据: {platform}")
+
+    try:
+        if EPGFileManager.read_epg_file(platform) is not None:
+            logger.info(f"✅ 今日{platform}的EPG数据已存在，跳过更新")
+            return
+
+        channels, programs = await get_4gtv_epg()
+        if not channels:
+            logger.warning(f"⚠️ 未找到{platform}的频道数据")
+            return
+
+        response_xml = await gen_channel(channels, programs)
+
+        if EPGFileManager.save_epg_file(platform, response_xml):
+            EPGFileManager.delete_old_epg_files(platform)
+            logger.info(f"✨ 成功更新{platform}的EPG数据")
+        else:
+            logger.error(f"❌ 保存{platform}的EPG文件失败")
+
+    except Exception as e:
+        logger.error(f"💥 更新{platform}的EPG数据时发生错误: {e}", exc_info=True)
+
+
 @app.get("/epg/{platform}")
 async def get_platform_epg(platform: str):
     """Get EPG data for a specific platform"""
@@ -380,13 +477,15 @@ async def get_all_enabled_platforms_epg():
 async def get_all_enabled_platforms_epg_gz():
     """Get aggregated EPG data from all enabled platforms (cached, gzip compressed)"""
     from fastapi.responses import FileResponse
-    import os
 
     logger.info(f"📦 提供all平台的gz压缩缓存EPG数据服务")
 
-    gz_file_path = EPGFileManager.get_epg_file_path("all").replace(".xml", ".xml.gz")
+    # Serve the newest available gz (matches the latest all xml) so the endpoint
+    # keeps working during the daily refresh window instead of returning 404.
+    date_str, xml_path = EPGFileManager.get_latest_epg_file("all")
+    gz_file_path = xml_path.replace(".xml", ".xml.gz") if xml_path else None
 
-    if not os.path.exists(gz_file_path):
+    if not gz_file_path or not os.path.exists(gz_file_path):
         logger.error(f"❌ 未找到all.gz压缩文件: {gz_file_path}")
         from fastapi import HTTPException
         raise HTTPException(
@@ -394,16 +493,80 @@ async def get_all_enabled_platforms_epg_gz():
             detail="Compressed EPG data not available. Please wait for next update cycle."
         )
 
+    today = datetime.now().strftime('%Y%m%d')
     return FileResponse(
         path=gz_file_path,
         media_type="application/gzip",
         headers={
             "Content-Disposition": "attachment; filename=all.xml.gz",
             "Cache-Control": f"public, max-age={Config.EPG_CACHE_TTL}, s-maxage={Config.EPG_CACHE_TTL}",
-            "ETag": f'"epg-all-gz-{datetime.now().strftime("%Y%m%d")}"'
+            "ETag": f'"epg-all-gz-{date_str}"',
+            "X-EPG-Date": date_str or "",
+            "X-EPG-Stale": "true" if date_str != today else "false",
         },
         filename="all.xml.gz"
     )
+
+
+@app.get("/status")
+async def get_epg_status():
+    """Report freshness of each platform's EPG data.
+
+    For every configured platform (and the merged ``all`` cache) this returns the
+    date its data is updated to, how many channels/programs that file contains,
+    and whether it is current ("ok"), one-or-more days behind ("stale"),
+    unparseable ("invalid") or absent ("missing") — so consumers can judge data
+    quality at a glance.
+    """
+    # Serve a cached response if it is still fresh — bounds work to once per TTL
+    # no matter how often the endpoint is hit. `updating` is overlaid live.
+    now = time.monotonic()
+    cached = _status_response_cache["data"]
+    if cached is not None and (now - _status_response_cache["ts"]) < _STATUS_CACHE_TTL:
+        return {**cached, "updating": _update_lock.locked(), "cached": True}
+
+    today = datetime.now().strftime('%Y%m%d')
+    enabled_set = {p["platform"] for p in Config.get_enabled_platforms()}
+
+    entries = list(Config.EPG_PLATFORMS) + [{"platform": "all", "name": "All (merged)"}]
+
+    platforms_info = []
+    for conf in entries:
+        platform = conf["platform"]
+        date_str, counts = _epg_file_counts(platform)
+        is_today = date_str == today
+
+        info = {
+            "platform": platform,
+            "name": conf.get("name", platform),
+            "enabled": platform == "all" or platform in enabled_set,
+            "updated_to": date_str,
+            "is_today": is_today,
+            "channels": 0,
+            "programs": 0,
+            "status": "missing",
+        }
+
+        if counts is not None:
+            channels, programs, parse_status = counts
+            info["channels"] = channels
+            info["programs"] = programs
+            info["status"] = parse_status if parse_status == "invalid" else ("ok" if is_today else "stale")
+
+        platforms_info.append(info)
+
+    result = {
+        "service": Config.APP_NAME,
+        "version": Config.APP_VERSION,
+        "today": today,
+        "timezone": Config.EPG_TIMEZONE,
+        "updating": _update_lock.locked(),
+        "platforms": platforms_info,
+        "cached": False,
+    }
+    _status_response_cache["ts"] = now
+    _status_response_cache["data"] = result
+    return result
 
 
 async def gen_channel(channels, programs):
@@ -423,8 +586,6 @@ async def generate_all_platforms_cache():
     logger.info(f"🔄 开始生成all平台合并缓存: {enabled_platforms}")
 
     try:
-        # Use existing aggregate logic to merge all platforms
-        import xml.etree.ElementTree as ET
         import gzip
 
         merged_root = ET.Element("tv")
@@ -436,9 +597,13 @@ async def generate_all_platforms_cache():
         total_programs = 0
 
         for platform in enabled_platforms:
-            content = EPGFileManager.read_epg_file(platform)
+            # Use the latest available file (today's if present, else the most
+            # recent) so the merged cache always contains every platform — slow
+            # platforms simply contribute slightly stale data until they refresh.
+            _date, content = EPGFileManager.read_latest_epg_file(platform)
             if not content:
-                logger.warning(f"⚠️ 未找到平台的EPG数据: {platform}")
+                # Normal during the refresh window: platform still being fetched
+                logger.info(f"⏳ 平台 {platform} 暂无可用数据（可能仍在抓取中），跳过合并")
                 continue
 
             try:
@@ -491,8 +656,10 @@ async def generate_all_platforms_cache():
 
         try:
             EPGFileManager.ensure_directory_exists(gz_file_path)
-            with open(gz_file_path, "wb") as gz_file:
+            tmp_gz_path = f"{gz_file_path}.tmp"
+            with open(tmp_gz_path, "wb") as gz_file:
                 gz_file.write(compressed_xml)
+            os.replace(tmp_gz_path, gz_file_path)
 
             compression_ratio = len(compressed_xml) / len(merged_xml) * 100
             saved_ratio = 100 - compression_ratio
@@ -528,60 +695,73 @@ async def generate_all_platforms_cache():
 
 
 async def update_all_enabled_platforms():
-    """Update EPG data for all enabled platforms"""
-    enabled_platforms = Config.get_enabled_platforms()
+    """Update EPG data for all enabled platforms.
 
-    if not enabled_platforms:
-        logger.warning("⚠️ 没有启用任何平台")
+    Platforms are fetched concurrently. The merged ``all`` cache is regenerated
+    incrementally as platforms finish (via ``as_completed``) instead of waiting
+    for the slowest platform, so ``/all`` becomes available within seconds of the
+    first platform completing and then refreshes as more data lands.
+    """
+    if _update_lock.locked():
+        logger.info("⏳ 已有EPG更新任务在进行中，跳过本次触发")
         return
 
-    logger.info(f"🔄 开始更新{len(enabled_platforms)}个启用平台的EPG数据")
+    async with _update_lock:
+        enabled_platforms = Config.get_enabled_platforms()
 
-    # ===== 记录更新前各平台文件时间 =====
-    platform_mtime_before = {}
-    for conf in enabled_platforms:
-        platform = conf["platform"]
-        path = EPGFileManager.get_epg_file_path(platform)
-        platform_mtime_before[platform] = os.path.getmtime(path) if os.path.exists(path) else 0
+        if not enabled_platforms:
+            logger.warning("⚠️ 没有启用任何平台")
+            return
 
-    # ===== 并发执行更新 =====
-    tasks = [globals()[conf["fetcher"]]() for conf in enabled_platforms]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+        logger.info(f"🔄 开始更新{len(enabled_platforms)}个启用平台的EPG数据")
 
-    # ===== 统计结果 =====
-    success_count = 0
-    error_count = 0
-    any_updated = False
+        # ===== 记录更新前各平台文件时间（仅看当天文件）=====
+        mtime_before = {}
+        for conf in enabled_platforms:
+            path = EPGFileManager.get_epg_file_path(conf["platform"])
+            mtime_before[conf["platform"]] = os.path.getmtime(path) if os.path.exists(path) else 0
 
-    for i, result in enumerate(results):
-        platform_conf = enabled_platforms[i]
-        platform = platform_conf["platform"]
-        platform_name = platform_conf["name"]
+        # today's "all" cache present? if not, the first completed platform forces a regen
+        all_cache_exists = EPGFileManager.read_epg_file("all") is not None
 
-        if isinstance(result, Exception):
-            error_count += 1
-            logger.error(f"❌ 更新{platform_name}的EPG数据失败: {result}", exc_info=True)
-            continue
+        async def run_one(conf):
+            """Run one platform's fetcher and report whether its file changed"""
+            platform = conf["platform"]
+            ok = True
+            try:
+                await globals()[conf["fetcher"]]()
+            except Exception as e:
+                ok = False
+                logger.error(f"❌ 更新{conf['name']}的EPG数据失败: {e}", exc_info=True)
 
-        success_count += 1
-
-        # 对比文件更新时间
-        path = EPGFileManager.get_epg_file_path(platform)
-        if os.path.exists(path):
-            if os.path.getmtime(path) > platform_mtime_before.get(platform, 0):
-                any_updated = True
+            path = EPGFileManager.get_epg_file_path(platform)
+            changed = os.path.exists(path) and os.path.getmtime(path) > mtime_before.get(platform, 0)
+            if changed:
                 logger.info(f"🔁 检测到 {platform} 的EPG数据发生变化")
+            return ok, changed
 
-    logger.info(f"🎯 EPG数据更新完成: {success_count}个成功，{error_count}个失败")
+        tasks = [asyncio.create_task(run_one(conf)) for conf in enabled_platforms]
 
-    # ===== 决定是否生成 all =====
-    all_cache_exists = EPGFileManager.read_epg_file("all") is not None
+        success_count = 0
+        error_count = 0
+        need_initial_regen = not all_cache_exists
 
-    if not all_cache_exists or any_updated:
-        logger.info("📝 需要重新生成all缓存")
-        await generate_all_platforms_cache()
-    else:
-        logger.info("✅ all缓存已存在且本轮无平台更新，跳过重新生成")
+        for finished in asyncio.as_completed(tasks):
+            ok, changed = await finished
+            success_count += 1 if ok else 0
+            error_count += 0 if ok else 1
+
+            # Regenerate the merged cache as soon as there is something new to
+            # publish (or the day's cache doesn't exist yet).
+            if changed or need_initial_regen:
+                need_initial_regen = False
+                await generate_all_platforms_cache()
+
+        logger.info(f"🎯 EPG数据更新完成: {success_count}个成功，{error_count}个失败")
+
+        # Invalidate the /status cache so it reflects this cycle's data on next hit
+        _status_response_cache["ts"] = 0.0
+        _status_response_cache["data"] = None
 
 
 @app.on_event("startup")

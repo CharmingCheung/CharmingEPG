@@ -34,6 +34,7 @@ class FourGTVPlatform(BaseEPGPlatform):
     BATCH_PAUSE = 60              # 批间休息 (秒)
     RATE_LIMIT_WAIT = 90          # 429 限速等待 (秒)
     MAX_RETRIES = 3
+    PROGRESS_EVERY = 10           # 每 N 个频道打印一次进度心跳
 
     def __init__(self):
         super().__init__("4gtv")
@@ -101,9 +102,15 @@ class FourGTVPlatform(BaseEPGPlatform):
     async def fetch_programs(self, channels: List[Channel]) -> List[Program]:
         """Fetch EPG data by scraping each channel page (serial with rate limiting)"""
         today = datetime.now(TW).replace(hour=0, minute=0, second=0, microsecond=0)
+        total = len(channels)
+
+        # 粗略预估耗时：每频道平均延迟 + 批间休息，让用户对总时长有预期
+        avg_delay = sum(self.CHANNEL_DELAY) / 2
+        est_minutes = (total * avg_delay + max(0, (total - 1) // self.BATCH_SIZE) * self.BATCH_PAUSE) / 60
         self.logger.info(
             f"📡 正在抓取 4GTV EPG 数据 "
-            f"(频道: {len(channels)}, 基准日期: {today.strftime('%Y-%m-%d')}, 今天/明天/後天)"
+            f"(频道: {total}, 基准日期: {today.strftime('%Y-%m-%d')}, 今天/明天/後天)；"
+            f"串行+限速抓取，预计耗时约 {est_minutes:.0f} 分钟"
         )
 
         all_programs = []
@@ -113,8 +120,13 @@ class FourGTVPlatform(BaseEPGPlatform):
         for i, ch in enumerate(channels):
             # 每 BATCH_SIZE 个频道休息一次 (跳过第一个)
             if i > 0 and i % self.BATCH_SIZE == 0:
-                self.logger.info(f"⏸️ 4GTV 批次休息 {self.BATCH_PAUSE}s... (进度 {i}/{len(channels)})")
+                self.logger.info(
+                    f"⏸️ 4GTV 批次休息 {self.BATCH_PAUSE}s... "
+                    f"(进度 {i}/{total}, 成功 {success}, 累计 {len(all_programs)} 节目)"
+                )
                 await asyncio.sleep(self.BATCH_PAUSE)
+
+            self.logger.debug(f"🔄【4GTV】抓取频道 {i + 1}/{total}: {ch.name}")
 
             url = self.CHANNEL_PAGE_URL.format(fs_id=ch.extra_data["fs_id"], fn_id=ch.extra_data["fn_id"])
             html = await asyncio.to_thread(self._fetch_url, url)
@@ -129,6 +141,13 @@ class FourGTVPlatform(BaseEPGPlatform):
                     self.logger.warning(f"⚠️ 4GTV 无节目数据: {ch.name}")
             else:
                 fail += 1
+
+            # 进度心跳：让用户清楚地看到抓取仍在进行
+            if (i + 1) % self.PROGRESS_EVERY == 0 or (i + 1) == total:
+                self.logger.info(
+                    f"📈 4GTV 抓取进度 {i + 1}/{total} "
+                    f"(成功 {success}, 失败/无数据 {fail}, 累计 {len(all_programs)} 节目)"
+                )
 
             await asyncio.sleep(random.uniform(*self.CHANNEL_DELAY))
 

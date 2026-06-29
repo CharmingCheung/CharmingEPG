@@ -59,7 +59,10 @@ class EPGFileManager:
     @staticmethod
     def save_epg_file(platform: str, content: bytes, date_str: str = None) -> bool:
         """
-        Save EPG content to file
+        Save EPG content to file atomically
+
+        Writes to a temporary file first, then atomically replaces the target.
+        This guarantees readers never observe a half-written XML file.
 
         Args:
             platform: Platform name
@@ -70,19 +73,77 @@ class EPGFileManager:
             True if successful, False otherwise
         """
         file_path = EPGFileManager.get_epg_file_path(platform, date_str)
+        tmp_path = f"{file_path}.tmp"
 
         try:
             EPGFileManager.ensure_directory_exists(file_path)
 
-            with open(file_path, "wb") as file:
+            with open(tmp_path, "wb") as file:
                 file.write(content)
+            os.replace(tmp_path, file_path)
 
             logger.info(f"💾 保存EPG文件: {file_path} ({len(content)} 字节)")
             return True
 
         except Exception as e:
             logger.error(f"❌ 保存EPG文件失败 {file_path}: {e}")
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
             return False
+
+    @staticmethod
+    def get_latest_epg_file(platform: str):
+        """
+        Find the newest dated EPG file for a platform.
+
+        Serving endpoints use this so they keep returning the most recent
+        available data while today's file is still being generated (e.g. during
+        the midnight refresh window for slow platforms).
+
+        Returns:
+            (date_str, file_path) for the newest YYYYMMDD file, or (None, None)
+        """
+        epg_dir = os.path.dirname(EPGFileManager.get_epg_file_path(platform))
+        if not os.path.isdir(epg_dir):
+            return None, None
+
+        prefix = f"{platform}_"
+        suffix = ".xml"
+        best_date = None
+        for file_name in os.listdir(epg_dir):
+            if file_name.startswith(prefix) and file_name.endswith(suffix):
+                date_part = file_name[len(prefix):-len(suffix)]
+                if len(date_part) == 8 and date_part.isdigit():
+                    if best_date is None or date_part > best_date:
+                        best_date = date_part
+
+        if best_date is None:
+            return None, None
+        return best_date, EPGFileManager.get_epg_file_path(platform, best_date)
+
+    @staticmethod
+    def read_latest_epg_file(platform: str):
+        """
+        Read the newest available EPG file for a platform.
+
+        Returns:
+            (date_str, content_bytes) or (None, None) if no file exists
+        """
+        date_str, file_path = EPGFileManager.get_latest_epg_file(platform)
+        if not file_path:
+            # Low-level helper: callers decide how to report a missing file
+            # (during the daily refresh window a not-yet-fetched platform is normal).
+            logger.debug(f"未找到任何EPG文件: {platform}")
+            return None, None
+        try:
+            with open(file_path, "rb") as file:
+                return date_str, file.read()
+        except Exception as e:
+            logger.error(f"❌ 读取EPG文件失败 {file_path}: {e}")
+            return None, None
 
     @staticmethod
     def delete_old_epg_files(platform: str, keep_current: bool = True) -> int:
@@ -219,7 +280,9 @@ class EPGFileManager:
         Raises:
             HTTPException: If EPG file is not found
         """
-        content = EPGFileManager.read_epg_file(platform)
+        # Serve the most recent available file so consumers are not hit with a
+        # 404 during the daily refresh window (today's file not generated yet).
+        date_str, content = EPGFileManager.read_latest_epg_file(platform)
 
         if content is None:
             logger.error(f"❌ 未找到平台{platform}的EPG文件")
@@ -228,36 +291,33 @@ class EPGFileManager:
                 detail=f"EPG data not available for platform: {platform}"
             )
 
+        today = datetime.now().strftime('%Y%m%d')
+        is_stale = date_str != today
+
+        headers = {
+            "Content-Disposition": f"attachment; filename={platform}_epg.xml",
+            "Cache-Control": f"public, max-age={Config.EPG_CACHE_TTL}, s-maxage={Config.EPG_CACHE_TTL}",
+            "ETag": f'"epg-{platform}-{date_str}"',
+            "X-Platform": platform,
+            "X-EPG-Date": date_str or "",
+            "X-EPG-Stale": "true" if is_stale else "false",
+        }
+
         # Parse XML to get channel and program counts for headers
         try:
             root = ET.fromstring(content)
             channel_count = len(root.findall("./channel"))
             program_count = len(root.findall("./programme"))
 
-            logger.info(f"📡 为{platform}提供EPG服务: {channel_count}个频道，{program_count}个节目")
-
-            return Response(
-                content=content,
-                media_type="application/xml",
-                headers={
-                    "Content-Disposition": f"attachment; filename={platform}_epg.xml",
-                    "Cache-Control": f"public, max-age={Config.EPG_CACHE_TTL}, s-maxage={Config.EPG_CACHE_TTL}",
-                    "ETag": f'"epg-{platform}-{datetime.now().strftime("%Y%m%d")}"',
-                    "X-Platform": platform,
-                    "X-Total-Channels": str(channel_count),
-                    "X-Total-Programs": str(program_count)
-                }
+            logger.info(
+                f"📡 为{platform}提供EPG服务: {channel_count}个频道，{program_count}个节目 "
+                f"(数据日期: {date_str}{'，已过期' if is_stale else ''})"
             )
+
+            headers["X-Total-Channels"] = str(channel_count)
+            headers["X-Total-Programs"] = str(program_count)
 
         except ET.ParseError:
             logger.warning(f"⚠️ 平台{platform}的XML内容无效，按原样提供服务")
-            return Response(
-                content=content,
-                media_type="application/xml",
-                headers={
-                    "Content-Disposition": f"attachment; filename={platform}_epg.xml",
-                    "Cache-Control": f"public, max-age={Config.EPG_CACHE_TTL}, s-maxage={Config.EPG_CACHE_TTL}",
-                    "ETag": f'"epg-{platform}-{datetime.now().strftime("%Y%m%d")}"',
-                    "X-Platform": platform
-                }
-            )
+
+        return Response(content=content, media_type="application/xml", headers=headers)

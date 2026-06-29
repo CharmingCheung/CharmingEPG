@@ -22,7 +22,7 @@ def _parse_xml_response(response) -> ET.Element:
 
 
 class CNEpgPlatform(BaseEPGPlatform):
-    """CN (epg.pw) EPG platform implementation"""
+    """CN EPG platform implementation"""
 
     def __init__(self):
         super().__init__("cn")
