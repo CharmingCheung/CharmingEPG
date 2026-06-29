@@ -12,6 +12,8 @@
 - Mewatch
 - Singtel (有IP限制，如需代理请设置SINGTEL_PROXY)
 - UnifiTV
+- FengShows（凤凰卫视：资讯台/中文台/香港台）
+- 4GTV（四季線上，频道较多且站点有Cloudflare防护，首次更新较慢）
 - CN
 
 ## Feature
@@ -37,6 +39,8 @@ EPG_ENABLE_STARHUB=false
 EPG_ENABLE_MEWATCH=false
 EPG_ENABLE_SINGTEL=false
 EPG_ENABLE_UNIFITV=false
+EPG_ENABLE_FENGSHOWS=false
+EPG_ENABLE_4GTV=false
 #支持`1`/`0` `yes`/`no` `true`/`false` `on`/`off`
 #这些配置已经在`docker-compose.example.yml`中列好，自行配置即可。
 
@@ -87,6 +91,8 @@ services:
       - EPG_ENABLE_MEWATCH=true
       - EPG_ENABLE_SINGTEL=true
       - EPG_ENABLE_UNIFITV=true
+      - EPG_ENABLE_FENGSHOWS=true
+      - EPG_ENABLE_4GTV=true
       - SINGTEL_PROXY=socks5://user:pass@host:1080
       - TZ=Asia/Shanghai
       - EPG_CACHE_TTL=3600
@@ -116,6 +122,8 @@ docker run -d \
   -e EPG_ENABLE_STARHUB=false \
   -e EPG_ENABLE_SINGTEL=false \
   -e EPG_ENABLE_UNIFITV=false \
+  -e EPG_ENABLE_FENGSHOWS=false \
+  -e EPG_ENABLE_4GTV=false \
   -e SINGTEL_PROXY=socks5://user:pass@host:1080 \
   charmingcheung000/charming-epg:latest
 ```
@@ -142,6 +150,8 @@ http://[ip]:[port]/epg/starhub
 http://[ip]:[port]/epg/mewatch
 http://[ip]:[port]/epg/singtel
 http://[ip]:[port]/epg/unifitv
+http://[ip]:[port]/epg/fengshows
+http://[ip]:[port]/epg/4gtv
 http://[ip]:[port]/epg/cn
-http://[ip]:[port]/epg?platforms=tvb,nowtv,rthk,hoy,hami,astro,starhub,mewatch,singtel,unifitv,cn
+http://[ip]:[port]/epg?platforms=tvb,nowtv,rthk,hoy,hami,astro,starhub,mewatch,singtel,unifitv,fengshows,4gtv,cn
 ```

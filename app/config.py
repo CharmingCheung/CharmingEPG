@@ -78,6 +78,8 @@ class Config:
         {"platform": "mewatch", "name": "MeWatch", "fetcher": "request_mewatch_epg"},
         {"platform": "singtel", "name": "Singtel", "fetcher": "request_singtel_epg"},
         {"platform": "unifitv", "name": "UnifiTV", "fetcher": "request_unifitv_epg"},
+        {"platform": "fengshows", "name": "FengShows", "fetcher": "request_fengshows_epg"},
+        {"platform": "4gtv", "name": "4GTV", "fetcher": "request_4gtv_epg"},
         {"platform": "cn", "name": "CN (epg.pw)", "fetcher": "request_cn_epg"},
     ]
 
