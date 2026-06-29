@@ -12,8 +12,8 @@
 - Mewatch
 - Singtel (有IP限制，如需代理请设置SINGTEL_PROXY)
 - UnifiTV
-- FengShows（凤凰卫视：资讯台/中文台/香港台）
-- 4GTV（四季線上，频道较多且站点有Cloudflare防护，首次更新较慢）
+- FengShows（凤凰秀：资讯台/中文台/香港台）感谢`THX1166`贡献的代码
+- 4GTV（频道较多且站点有Cloudflare防护，每次更新较慢）感谢`THX1166`贡献的代码
 - CN
 
 ## Feature
