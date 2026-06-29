@@ -216,28 +216,29 @@ class EPGFileManager:
             try:
                 platform_root = ET.fromstring(content)
 
-                # Process channels (first-come-first-served for duplicates)
-                platform_channels = 0
-                platform_programs = 0
-
+                # First pass: claim this platform's not-yet-seen channels
+                # (first-come-first-served dedup across platforms)
+                new_ids = set()
                 for channel in platform_root.findall("./channel"):
                     channel_id = channel.get("id")
                     if channel_id and channel_id not in channels_seen:
                         channels_seen.add(channel_id)
+                        new_ids.add(channel_id)
                         merged_root.append(channel)
-                        platform_channels += 1
 
-                        # Add all programs for this channel
-                        for programme in platform_root.iter("programme"):
-                            if programme.get("channel") == channel_id:
-                                merged_root.append(programme)
-                                platform_programs += 1
+                # Second pass: a single scan over programmes (O(channels + programmes)
+                # instead of O(channels × programmes))
+                platform_programs = 0
+                for programme in platform_root.findall("./programme"):
+                    if programme.get("channel") in new_ids:
+                        merged_root.append(programme)
+                        platform_programs += 1
 
-                total_channels += platform_channels
+                total_channels += len(new_ids)
                 total_programs += platform_programs
 
                 logger.debug(
-                    f"🔀 从{platform}合并{platform_channels}个频道和{platform_programs}个节目"
+                    f"🔀 从{platform}合并{len(new_ids)}个频道和{platform_programs}个节目"
                 )
 
             except ET.ParseError as e:
