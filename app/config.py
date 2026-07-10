@@ -38,6 +38,11 @@ class Config:
     # Example: socks5://user:pass@host:1080 or http://host:8080
     SINGTEL_PROXY = os.getenv("SINGTEL_PROXY")
 
+    # CatchPlay-specific proxy (CatchPlay API is geo-restricted to Taiwan IPs)
+    # Supports http://, https://, socks5://, socks5h:// URL schemes
+    # Example: socks5://user:pass@host:1080 or http://host:8080
+    CATCHPLAY_PROXY = os.getenv("CATCHPLAY_PROXY")
+
     @classmethod
     def get_proxies(cls) -> Optional[Dict[str, str]]:
         """Get proxy configuration if available"""
@@ -52,6 +57,12 @@ class Config:
     def get_singtel_proxy(cls) -> Optional[str]:
         """Get Singtel-specific proxy URL (returns single URL string)"""
         proxy = (cls.SINGTEL_PROXY or "").strip()
+        return proxy or None
+
+    @classmethod
+    def get_catchplay_proxy(cls) -> Optional[str]:
+        """Get CatchPlay-specific proxy URL (returns single URL string)"""
+        proxy = (cls.CATCHPLAY_PROXY or "").strip()
         return proxy or None
 
     @classmethod
@@ -80,6 +91,7 @@ class Config:
         {"platform": "singtel", "name": "Singtel", "fetcher": "request_singtel_epg"},
         {"platform": "unifitv", "name": "UnifiTV", "fetcher": "request_unifitv_epg"},
         {"platform": "4gtv", "name": "4GTV", "fetcher": "request_4gtv_epg"},
+        {"platform": "catchplay", "name": "CatchPlay", "fetcher": "request_catchplay_epg"},
         {"platform": "cn", "name": "CN", "fetcher": "request_cn_epg"},
     ]
 
