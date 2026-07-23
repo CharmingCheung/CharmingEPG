@@ -2,7 +2,7 @@
 
 ## Support
 
-- MyTV Super
+- myTV SUPER
 - NowTV
 - RTHK
 - HOY
