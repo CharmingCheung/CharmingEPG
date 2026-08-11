@@ -15,6 +15,7 @@
 - FengShows（凤凰秀：资讯台/中文台/香港台）感谢`THX1166`贡献的代码
 - 4GTV（频道较多且站点有Cloudflare防护，每次更新较慢）感谢`THX1166`贡献的代码
 - CatchPlay（有台湾IP限制，如需代理请设置CATCHPLAY_PROXY）
+- SkyGo NZ
 - CN
 
 ## Feature
@@ -45,6 +46,7 @@ EPG_ENABLE_UNIFITV=false
 EPG_ENABLE_FENGSHOWS=false
 EPG_ENABLE_4GTV=false
 EPG_ENABLE_CATCHPLAY=false
+EPG_ENABLE_SKYGONZ=false
 #支持`1`/`0` `yes`/`no` `true`/`false` `on`/`off`
 #这些配置已经在`docker-compose.example.yml`中列好，自行配置即可。
 
@@ -104,6 +106,7 @@ services:
       - EPG_ENABLE_FENGSHOWS=true
       - EPG_ENABLE_4GTV=true
       - EPG_ENABLE_CATCHPLAY=true
+      - EPG_ENABLE_SKYGONZ=true
       - SINGTEL_PROXY=socks5://user:pass@host:1080
       - CATCHPLAY_PROXY=socks5://user:pass@host:1080
       - TZ=Asia/Shanghai
@@ -137,6 +140,7 @@ docker run -d \
   -e EPG_ENABLE_FENGSHOWS=false \
   -e EPG_ENABLE_4GTV=false \
   -e EPG_ENABLE_CATCHPLAY=false \
+  -e EPG_ENABLE_SKYGONZ=false \
   -e SINGTEL_PROXY=socks5://user:pass@host:1080 \
   -e CATCHPLAY_PROXY=socks5://user:pass@host:1080 \
   charmingcheung000/charming-epg:latest
@@ -177,6 +181,7 @@ http://[ip]:[port]/epg/unifitv
 http://[ip]:[port]/epg/fengshows
 http://[ip]:[port]/epg/4gtv
 http://[ip]:[port]/epg/catchplay
+http://[ip]:[port]/epg/skygonz
 http://[ip]:[port]/epg/cn
-http://[ip]:[port]/epg?platforms=tvb,nowtv,rthk,hoy,hami,astro,starhub,mewatch,singtel,unifitv,fengshows,4gtv,catchplay,cn
+http://[ip]:[port]/epg?platforms=tvb,nowtv,rthk,hoy,hami,astro,starhub,mewatch,singtel,unifitv,fengshows,4gtv,catchplay,skygonz,cn
 ```

@@ -92,6 +92,7 @@ class Config:
         {"platform": "unifitv", "name": "UnifiTV", "fetcher": "request_unifitv_epg"},
         {"platform": "4gtv", "name": "4GTV", "fetcher": "request_4gtv_epg"},
         {"platform": "catchplay", "name": "CatchPlay", "fetcher": "request_catchplay_epg"},
+        {"platform": "skygonz", "name": "SkyGo NZ", "fetcher": "request_skygonz_epg"},
         {"platform": "cn", "name": "CN", "fetcher": "request_cn_epg"},
     ]
 

@@ -13,3 +13,4 @@ services:
       - EPG_ENABLE_RTHK=false
       - EPG_ENABLE_FENGSHOWS=true
       - EPG_ENABLE_4GTV=true
+      - EPG_ENABLE_SKYGONZ=false
