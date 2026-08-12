@@ -19,7 +19,7 @@ class TelusPlatform(BaseEPGPlatform):
         "TELUS/T7.3/A/ENG/CHROME_FIREFOX_HTML5/OPTIK/TRAY"
     )
     WEBSITE_URL = "https://www.telustvplus.com/"
-    EPG_DAYS = 7
+    EPG_DAYS = 3
     IMPERSONATE = "chrome120"
 
     def __init__(self):
@@ -118,7 +118,7 @@ class TelusPlatform(BaseEPGPlatform):
         return channels
 
     async def fetch_programs(self, channels: List[Channel]) -> List[Program]:
-        """Fetch seven days of programs in daily requests."""
+        """Fetch programs in daily requests, including the previous UTC day."""
         channel_ids = {channel.channel_id for channel in channels}
         programs_by_key = {}
         time_ranges = self._get_time_ranges()
@@ -250,10 +250,10 @@ class TelusPlatform(BaseEPGPlatform):
             current = current.replace(tzinfo=timezone.utc)
         start = current.astimezone(timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0
-        )
+        ) - timedelta(days=1)
         return [
             (start + timedelta(days=offset), start + timedelta(days=offset + 1))
-            for offset in range(cls.EPG_DAYS)
+            for offset in range(cls.EPG_DAYS + 1)
         ]
 
     @staticmethod

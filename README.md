@@ -16,7 +16,7 @@
 - 4GTV（频道较多且站点有Cloudflare防护，每次更新较慢）感谢`THX1166`贡献的代码
 - CatchPlay（有台湾IP限制，如需代理请设置CATCHPLAY_PROXY）
 - SkyGo NZ
-- Telus TV+
+- Telus TV+ （考虑数据量太大，只获取4天）
 - CN
 
 ## Feature
