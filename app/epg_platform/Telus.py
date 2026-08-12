@@ -19,7 +19,7 @@ class TelusPlatform(BaseEPGPlatform):
         "TELUS/T7.3/A/ENG/CHROME_FIREFOX_HTML5/OPTIK/TRAY"
     )
     WEBSITE_URL = "https://www.telustvplus.com/"
-    EPG_DAYS = 3
+    EPG_DAYS = 2
     IMPERSONATE = "chrome120"
 
     def __init__(self):

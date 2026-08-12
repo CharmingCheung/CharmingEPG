@@ -44,7 +44,7 @@ class Config:
     CATCHPLAY_PROXY = os.getenv("CATCHPLAY_PROXY")
 
     # Telus TV+ region used by both the channel and EPG endpoints
-    TELUS_REGION_ID = int(os.getenv("TELUS_REGION_ID", "25"))
+    TELUS_REGION_ID = int(os.getenv("TELUS_REGION_ID", "1"))
 
     @classmethod
     def get_proxies(cls) -> Optional[Dict[str, str]]:
