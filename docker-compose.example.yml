@@ -14,3 +14,4 @@ services:
       - EPG_ENABLE_FENGSHOWS=true
       - EPG_ENABLE_4GTV=true
       - EPG_ENABLE_SKYGONZ=false
+      - EPG_ENABLE_TELUS=false

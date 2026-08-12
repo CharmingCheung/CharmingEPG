@@ -43,6 +43,9 @@ class Config:
     # Example: socks5://user:pass@host:1080 or http://host:8080
     CATCHPLAY_PROXY = os.getenv("CATCHPLAY_PROXY")
 
+    # Telus TV+ region used by both the channel and EPG endpoints
+    TELUS_REGION_ID = int(os.getenv("TELUS_REGION_ID", "25"))
+
     @classmethod
     def get_proxies(cls) -> Optional[Dict[str, str]]:
         """Get proxy configuration if available"""
@@ -93,6 +96,7 @@ class Config:
         {"platform": "4gtv", "name": "4GTV", "fetcher": "request_4gtv_epg"},
         {"platform": "catchplay", "name": "CatchPlay", "fetcher": "request_catchplay_epg"},
         {"platform": "skygonz", "name": "SkyGo NZ", "fetcher": "request_skygonz_epg"},
+        {"platform": "telus", "name": "Telus", "fetcher": "request_telus_epg"},
         {"platform": "cn", "name": "CN", "fetcher": "request_cn_epg"},
     ]
 
