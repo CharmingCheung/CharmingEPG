@@ -18,7 +18,7 @@ class StarhubPlatform(BaseEPGPlatform):
 
     def __init__(self):
         super().__init__("starhub")
-        self.base_url = "https://waf-starhub-metadata-api-p001.ifs.vubiquity.com/v3.1/epg"
+        self.base_url = "https://waf-starhub-metadata-api-p001.sh-ifs.com/v3.1/epg"
         self.channels_url = f"{self.base_url}/channels"
         self.schedules_url = f"{self.base_url}/schedules"
 
