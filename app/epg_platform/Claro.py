@@ -1,7 +1,7 @@
 """Claro Brasil EPG client for the Premiere sports channels."""
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
@@ -17,6 +17,8 @@ class ClaroPlatform(BaseEPGPlatform):
 
     EPG_URL = "https://programacao.claro.com.br/gatekeeper/exibicao/select"
     CITY_ID = "1"
+    EPG_DAYS_BEFORE = 1
+    EPG_DAYS_AHEAD = 7
 
     # The Solr query uses ``id_revel`` values prefixed with ``1_``, while the
     # returned programme records identify channels using the numeric id_canal.
@@ -56,14 +58,15 @@ class ClaroPlatform(BaseEPGPlatform):
 
     @classmethod
     def _request_params(cls, now: Optional[datetime] = None) -> Dict[str, str]:
-        """Build the Solr query for today's calendar date."""
+        """Build the Solr query from yesterday through seven days ahead."""
         local_timezone = ZoneInfo(Config.EPG_TIMEZONE)
         current = now or datetime.now(local_timezone)
         if current.tzinfo is None:
             current = current.replace(tzinfo=local_timezone)
         else:
             current = current.astimezone(local_timezone)
-        date_str = current.date().isoformat()
+        start_date = current.date() - timedelta(days=cls.EPG_DAYS_BEFORE)
+        end_date = current.date() + timedelta(days=cls.EPG_DAYS_AHEAD)
         reveal_ids = " ".join(f"1_{channel_id}" for channel_id, _, _ in cls.CHANNELS)
         return {
             "q": f"id_revel:({reveal_ids}) AND id_cidade:{cls.CITY_ID}",
@@ -72,11 +75,14 @@ class ClaroPlatform(BaseEPGPlatform):
             "start": "0",
             "sort": "id_canal asc,dh_inicio asc",
             "fl": "dh_fim dh_inicio st_titulo titulo id_programa id_canal id_cidade",
-            "fq": f"dh_inicio:[{date_str}T00:00:00Z TO {date_str}T23:59:00Z]",
+            "fq": (
+                f"dh_inicio:[{start_date.isoformat()}T00:00:00Z TO "
+                f"{end_date.isoformat()}T23:59:59Z]"
+            ),
         }
 
     async def fetch_programs(self, channels: List[Channel]) -> List[Program]:
-        """Fetch and parse today's Premiere schedules in one request."""
+        """Fetch and parse schedules from yesterday through seven days ahead."""
         if not channels:
             return []
 
