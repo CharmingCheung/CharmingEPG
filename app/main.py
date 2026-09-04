@@ -26,6 +26,7 @@ from .epg_platform.FourGTV import get_4gtv_epg
 from .epg_platform.CatchPlay import get_catchplay_epg
 from .epg_platform.SkyGoNZ import get_skygonz_epg
 from .epg_platform.Telus import get_telus_epg
+from .epg_platform.Bein import get_bein_epg
 
 logger = get_logger(__name__)
 
@@ -515,6 +516,33 @@ async def request_telus_epg():
             return
 
         channels, programs = await get_telus_epg()
+        if not channels:
+            logger.warning(f"⚠️ 未找到{platform}的频道数据")
+            return
+
+        response_xml = await gen_channel(channels, programs)
+
+        if EPGFileManager.save_epg_file(platform, response_xml):
+            EPGFileManager.delete_old_epg_files(platform)
+            logger.info(f"✨ 成功更新{platform}的EPG数据")
+        else:
+            logger.error(f"❌ 保存{platform}的EPG文件失败")
+
+    except Exception as e:
+        logger.error(f"💥 更新{platform}的EPG数据时发生错误: {e}", exc_info=True)
+
+
+async def request_bein_epg():
+    """Update beIN SPORTS EPG data for all regions with available schedules."""
+    platform = "bein"
+    logger.info(f"📺 正在更新平台EPG数据: {platform}")
+
+    try:
+        if EPGFileManager.read_epg_file(platform) is not None:
+            logger.info(f"✅ 今日{platform}的EPG数据已存在，跳过更新")
+            return
+
+        channels, programs = await get_bein_epg()
         if not channels:
             logger.warning(f"⚠️ 未找到{platform}的频道数据")
             return

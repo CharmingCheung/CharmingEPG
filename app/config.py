@@ -97,6 +97,7 @@ class Config:
         {"platform": "catchplay", "name": "CatchPlay", "fetcher": "request_catchplay_epg"},
         {"platform": "skygonz", "name": "SkyGo NZ", "fetcher": "request_skygonz_epg"},
         {"platform": "telus", "name": "Telus", "fetcher": "request_telus_epg"},
+        {"platform": "bein", "name": "beIN SPORTS", "fetcher": "request_bein_epg"},
         {"platform": "cn", "name": "CN", "fetcher": "request_cn_epg"},
     ]
 
