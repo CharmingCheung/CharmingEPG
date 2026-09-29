@@ -113,6 +113,18 @@ class Config:
             "fetcher": "request_claro_epg",
             "enabled_by_default": False,
         },
+        {
+            "platform": "sling",
+            "name": "Sling",
+            "fetcher": "request_sling_epg",
+            "enabled_by_default": False,
+        },
+        {
+            "platform": "sling_sports",
+            "name": "Sling Sports",
+            "fetcher": "request_sling_sports_epg",
+            "enabled_by_default": False,
+        },
         {"platform": "cn", "name": "CN", "fetcher": "request_cn_epg"},
     ]
 

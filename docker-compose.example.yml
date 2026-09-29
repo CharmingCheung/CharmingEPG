@@ -16,3 +16,5 @@ services:
       - EPG_ENABLE_SKYGONZ=false
       - EPG_ENABLE_TELUS=false
       - EPG_ENABLE_BEIN=false
+      - EPG_ENABLE_SLING=false
+      - EPG_ENABLE_SLING_SPORTS=false

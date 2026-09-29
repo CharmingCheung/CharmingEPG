@@ -28,6 +28,7 @@ from .epg_platform.SkyGoNZ import get_skygonz_epg
 from .epg_platform.Telus import get_telus_epg
 from .epg_platform.Bein import get_bein_epg
 from .epg_platform.Claro import get_claro_epg
+from .epg_platform.Sling import get_sling_epg
 
 logger = get_logger(__name__)
 
@@ -585,6 +586,40 @@ async def request_claro_epg():
 
     except Exception as e:
         logger.error(f"💥 更新{platform}的EPG数据时发生错误: {e}", exc_info=True)
+
+
+async def _request_sling_group(platform: str, sports: bool):
+    """Update one Sling channel group while preserving stable XMLTV IDs."""
+    logger.info(f"📺 正在更新平台EPG数据: {platform}")
+    try:
+        if EPGFileManager.read_epg_file(platform) is not None:
+            logger.info(f"✅ 今日{platform}的EPG数据已存在，跳过更新")
+            return
+
+        channels, programs = await get_sling_epg(sports=sports)
+        if not channels:
+            logger.warning(f"⚠️ 未找到{platform}的频道数据")
+            return
+        if not programs:
+            logger.warning(f"⚠️ 未找到{platform}的节目数据，不生成EPG")
+            return
+
+        response_xml = await gen_channel(channels, programs)
+        if EPGFileManager.save_epg_file(platform, response_xml):
+            EPGFileManager.delete_old_epg_files(platform)
+            logger.info(f"✨ 成功更新{platform}的EPG数据")
+        else:
+            logger.error(f"❌ 保存{platform}的EPG文件失败")
+    except Exception as error:
+        logger.error(f"💥 更新{platform}的EPG数据时发生错误: {error}", exc_info=True)
+
+
+async def request_sling_epg():
+    await _request_sling_group("sling", sports=False)
+
+
+async def request_sling_sports_epg():
+    await _request_sling_group("sling_sports", sports=True)
 
 
 @app.get("/epg/{platform}")
