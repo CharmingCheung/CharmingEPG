@@ -246,6 +246,11 @@ class SlingPlatform(BaseEPGPlatform):
 
         metadata = row.get("metadata") or {}
         program_data = row.get("program") or {}
+        subtitle = str(
+            metadata.get("episode_title") or program_data.get("name") or ""
+        ).strip()
+        if subtitle and subtitle != title:
+            title = f"{title} : {subtitle}"
         return Program(
             channel_id=channel.channel_id,
             title=title,
