@@ -7,6 +7,7 @@
 - RTHK
 - HOY
 - Hami
+- ELTA（因转播权差异，ELTA 与 HAMI 的愛爾達频道在同一时段播出的节目可能不一致）
 - Astro Go（中文台都是中文描述）
 - StarHub（中文台都是中文描述）
 - Mewatch
@@ -40,6 +41,7 @@ EPG_ENABLE_CN=true
 EPG_ENABLE_TVB=true
 EPG_ENABLE_NOWTV=false
 EPG_ENABLE_HAMI=true
+EPG_ENABLE_ELTA=true
 EPG_ENABLE_ASTRO=false
 EPG_ENABLE_RTHK=false
 EPG_ENABLE_HOY=false
@@ -189,6 +191,7 @@ http://[ip]:[port]/epg/nowtv
 http://[ip]:[port]/epg/rthk
 http://[ip]:[port]/epg/hoy
 http://[ip]:[port]/epg/hami
+http://[ip]:[port]/epg/elta
 http://[ip]:[port]/epg/astro
 http://[ip]:[port]/epg/starhub
 http://[ip]:[port]/epg/mewatch
@@ -203,5 +206,5 @@ http://[ip]:[port]/epg/bein
 http://[ip]:[port]/epg/sling
 http://[ip]:[port]/epg/sling_sports
 http://[ip]:[port]/epg/cn
-http://[ip]:[port]/epg?platforms=tvb,nowtv,rthk,hoy,hami,astro,starhub,mewatch,singtel,unifitv,fengshows,4gtv,catchplay,skygonz,telus,bein,sling,sling_sports,cn
+http://[ip]:[port]/epg?platforms=tvb,nowtv,rthk,hoy,hami,elta,astro,starhub,mewatch,singtel,unifitv,fengshows,4gtv,catchplay,skygonz,telus,bein,sling,sling_sports,cn
 ```

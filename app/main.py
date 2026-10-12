@@ -29,6 +29,7 @@ from .epg_platform.Telus import get_telus_epg
 from .epg_platform.Bein import get_bein_epg
 from .epg_platform.Claro import get_claro_epg
 from .epg_platform.Sling import get_sling_epg
+from .epg_platform.Elta import get_elta_epg
 
 logger = get_logger(__name__)
 
@@ -559,6 +560,27 @@ async def request_bein_epg():
 
     except Exception as e:
         logger.error(f"💥 更新{platform}的EPG数据时发生错误: {e}", exc_info=True)
+
+
+async def request_elta_epg():
+    """Update Elta OTT EPG using the shared file and XML workflow."""
+    platform = "elta"
+    try:
+        if EPGFileManager.read_epg_file(platform) is not None:
+            logger.info(f"✅ 今日{platform}的EPG数据已存在，跳过更新")
+            return
+        channels, programs = await get_elta_epg()
+        if not channels or not programs:
+            logger.warning("⚠️ Elta 没有有效的频道或节目数据，不生成EPG")
+            return
+        response_xml = await gen_channel(channels, programs)
+        if EPGFileManager.save_epg_file(platform, response_xml):
+            EPGFileManager.delete_old_epg_files(platform)
+            logger.info("✨ 成功更新elta的EPG数据")
+        else:
+            logger.error("❌ 保存elta的EPG文件失败")
+    except Exception as error:
+        logger.error(f"💥 更新elta的EPG数据时发生错误: {error}", exc_info=True)
 
 
 async def request_claro_epg():

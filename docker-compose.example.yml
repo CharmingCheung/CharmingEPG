@@ -9,6 +9,7 @@ services:
       - EPG_ENABLE_TVB=true
       - EPG_ENABLE_NOWTV=false
       - EPG_ENABLE_HAMI=true
+      - EPG_ENABLE_ELTA=true
       - EPG_ENABLE_ASTRO=false
       - EPG_ENABLE_RTHK=false
       - EPG_ENABLE_FENGSHOWS=true

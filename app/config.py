@@ -95,6 +95,7 @@ class Config:
         {"platform": "fengshows", "name": "FengShows", "fetcher": "request_fengshows_epg"},
         {"platform": "nowtv", "name": "NowTV", "fetcher": "request_now_tv_epg"},
         {"platform": "hami", "name": "Hami", "fetcher": "request_hami_epg"},
+        {"platform": "elta", "name": "Elta OTT", "fetcher": "request_elta_epg"},
         {"platform": "astro", "name": "Astro Go", "fetcher": "request_astro_epg"},
         {"platform": "rthk", "name": "RTHK", "fetcher": "request_rthk_epg"},
         {"platform": "hoy", "name": "HOY", "fetcher": "request_hoy_epg"},
