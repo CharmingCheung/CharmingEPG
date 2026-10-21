@@ -33,6 +33,17 @@
 
 ## How to use
 
+运行环境为 Python 3.12（Docker 使用 `python:3.12-slim`，以支持新版安全依赖及 curl-cffi 预编译包）。依赖更新后需重新构建镜像，已有容器不会自动更新内部 Python 包。
+
+本地验证：
+
+```bash
+python -m pip install -r requirements.txt 'pip-audit==2.10.1' 'httpx~=0.28.1'
+python -m pip check
+python -m pip_audit -r requirements.txt
+python -m unittest discover -s tests -v
+```
+
 ### 环境变量
 
 ```dotenv
