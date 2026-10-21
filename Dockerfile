@@ -1,5 +1,5 @@
 #从官方Python基础镜像开始。
-FROM python:3.9-alpine
+FROM python:3.12-slim
 
 #将当前工作目录设置为/code。
 #这是我们放置requirements.txt文件和app目录的位置。
