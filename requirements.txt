@@ -1,7 +1,7 @@
 requests[socks]~=2.34.2
 fastapi~=0.156.4
 # Security floor for the transitive ASGI framework.
-starlette>=1.8.0,<2
+starlette>=1.9.0,<2
 uvicorn~=0.54.0
 pydantic~=2.14.1
 python-dotenv~=1.2.4
