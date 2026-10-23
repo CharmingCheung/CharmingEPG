@@ -38,7 +38,10 @@ class TelusPlatform(BaseEPGPlatform):
                 "缺少依赖 curl_cffi，无法抓取 Telus，请执行 pip install curl_cffi"
             ) from error
 
-        session = cffi_requests.Session()
+        from curl_cffi import CurlHttpVersion
+
+        # CVE-2026-92392: avoid HTTP/2 in curl_cffi's bundled libcurl.
+        session = cffi_requests.Session(http_version=CurlHttpVersion.V1_1)
         try:
             session.get(
                 self.WEBSITE_URL,

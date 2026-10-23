@@ -1,5 +1,10 @@
 #从官方Python基础镜像开始。
-FROM python:3.12-slim
+FROM python:3.12.15-slim-trixie
+
+# 应用 Debian 已发布的安全修复；发布时配合 --pull --no-cache 避免旧层缓存。
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 
 #将当前工作目录设置为/code。
 #这是我们放置requirements.txt文件和app目录的位置。
@@ -20,7 +25,11 @@ COPY ./requirements.txt /code/requirements.txt
 #因为上一步复制文件可以被 Docker 缓存 检测到，所以此步骤也将 使用 Docker 缓存（如果可用）。
 #
 #在开发过程中一次又一次构建镜像时，在此步骤中使用缓存将为你节省大量时间，而不是每次都下载和安装所有依赖项。
-RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+RUN python -m pip install --no-cache-dir --upgrade pip \
+    && python -m pip install --no-cache-dir --upgrade -r /code/requirements.txt \
+    && python -m pip check \
+    # pip 内置的旧 urllib3/msgpack 也会带入漏洞，运行服务无需保留安装器。
+    && python -m pip uninstall --yes pip
 
 #将“./app”目录复制到“/code”目录中。
 #

@@ -11,15 +11,24 @@ permissions:
   contents: read
 
 jobs:
-  audit-and-test:
+  container-security:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-          cache: pip
-      - run: python -m pip install -r requirements.txt 'pip-audit==2.10.1' 'httpx~=0.28.1'
-      - run: python -m pip check
-      - run: python -m pip_audit -r requirements.txt
-      - run: python -m unittest discover -s tests -v
+      - name: Build production Dockerfile with current security updates
+        run: docker build --pull --no-cache -t charming-epg:security .
+      - name: Inventory production runtime
+        run: |
+          docker run --rm charming-epg:security python -c 'import sys, ssl, pyexpat, importlib.metadata as m; from curl_cffi import Curl; print(sys.version); print(open("/etc/os-release").read()); print(ssl.OPENSSL_VERSION, pyexpat.EXPAT_VERSION, Curl().version()); print(sorted((d.metadata["Name"], d.version) for d in m.distributions()))'
+      - name: Audit installed production Python packages
+        run: |
+          docker run --rm charming-epg:security sh -c 'python -m venv /tmp/audit && /tmp/audit/bin/pip install pip-audit==2.10.1 && /tmp/audit/bin/pip-audit --path /usr/local/lib/python3.12/site-packages'
+      - name: Scan OS and application dependencies for high and critical vulnerabilities
+        run: |
+          docker save charming-epg:security -o /tmp/charming-epg.tar
+          docker run --rm -v /tmp/charming-epg.tar:/scan/image.tar:ro -v /tmp/trivy-cache:/root/.cache/trivy aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c image --input /scan/image.tar --scanners vuln --severity HIGH,CRITICAL
+          # 展示全部告警；有补丁的高危/严重漏洞必须阻止合并，未修复项持续跟踪。
+          docker run --rm -v /tmp/charming-epg.tar:/scan/image.tar:ro -v /tmp/trivy-cache:/root/.cache/trivy aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c image --input /scan/image.tar --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+      - name: Run tests inside production image
+        run: |
+          docker run --rm -v "$PWD/tests:/code/tests:ro" charming-epg:security sh -c 'python -m venv --system-site-packages /tmp/test && /tmp/test/bin/pip install "httpx~=0.28.1" && /tmp/test/bin/pip check && /tmp/test/bin/python -m unittest discover -s tests -v'

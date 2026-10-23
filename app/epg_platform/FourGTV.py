@@ -85,11 +85,15 @@ class FourGTVPlatform(BaseEPGPlatform):
             return []
 
         def _request():
+            from curl_cffi import CurlHttpVersion
+
             r = cffi_requests.get(
                 self.CHANNEL_LIST_API,
                 headers={"User-Agent": self._get_ua()},
                 timeout=Config.HTTP_TIMEOUT,
-                verify=False,
+                verify=True,
+                # CVE-2026-92392: disable HTTP/2 until bundled libcurl is patched.
+                http_version=CurlHttpVersion.V1_1,
                 impersonate="chrome120",
             )
             return r.json()
@@ -206,13 +210,16 @@ class FourGTVPlatform(BaseEPGPlatform):
         if self._session is not None:
             return self._session
 
-        session = cffi_requests.Session()
+        from curl_cffi import CurlHttpVersion
+
+        # CVE-2026-92392 also applies to the libcurl bundled in curl_cffi.
+        session = cffi_requests.Session(http_version=CurlHttpVersion.V1_1)
         try:
             session.get(
                 self.REFERER,
                 headers={"User-Agent": self._get_ua()},
                 timeout=Config.HTTP_TIMEOUT,
-                verify=False,
+                verify=True,
                 impersonate="chrome120",
             )
         except Exception:
@@ -278,7 +285,7 @@ class FourGTVPlatform(BaseEPGPlatform):
                         "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
                     },
                     timeout=Config.HTTP_TIMEOUT,
-                    verify=False,
+                    verify=True,
                     impersonate="chrome120",
                 )
 

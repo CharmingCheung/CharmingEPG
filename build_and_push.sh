@@ -240,6 +240,8 @@ build_multiarch() {
     fi
 
     docker buildx build \
+        --pull \
+        --no-cache \
         --platform linux/amd64,linux/arm64 \
         --file "$DOCKERFILE" \
         --tag "$FULL_IMAGE_NAME" \
