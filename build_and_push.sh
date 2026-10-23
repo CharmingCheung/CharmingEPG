@@ -49,6 +49,12 @@ check_requirements() {
         exit 1
     fi
 
+    log_info "检查Docker引擎连接..."
+    if ! docker system info >/dev/null; then
+        log_error "无法连接Docker引擎，请启动 Docker Desktop/OrbStack，并用 docker context ls 检查当前 context"
+        exit 1
+    fi
+
     log_success "工具检查完成"
 }
 
@@ -78,121 +84,27 @@ check_dockerfile() {
     log_success "Dockerfile文件检查完成"
 }
 
-# 获取当前登录用户名的辅助函数
-get_logged_user() {
-    # 方法1: 从 docker info 获取
-    local user_from_info=$(docker info 2>/dev/null | grep "Username:" | awk '{print $2}' 2>/dev/null || echo "")
-
-    # 方法2: 从配置文件获取
-    local user_from_config=""
-    if [ -f "$HOME/.docker/config.json" ]; then
-        # 尝试从配置文件中提取用户名（如果auths中有registry信息）
-        user_from_config=$(cat "$HOME/.docker/config.json" 2>/dev/null | grep -o '"https://index.docker.io/v1/"' 2>/dev/null || echo "")
-    fi
-
-    # 方法3: 尝试通过简单的API调用验证
-    local test_result=""
-    if curl -s --max-time 5 -f "https://hub.docker.com/v2/users/$DOCKER_USERNAME/" >/dev/null 2>&1; then
-        test_result="api_accessible"
-    fi
-
-    echo "$user_from_info"
-}
-
-# 验证登录状态
-verify_login() {
-    log_info "验证登录状态..."
-
-    # 尝试执行一个需要认证的操作来验证登录
-    local test_repo="$DOCKER_USERNAME/login-test-$(date +%s)"
-
-    # 尝试推送一个简单的测试标签（不会真的推送，只是验证权限）
-    log_info "测试Docker Hub连接和权限..."
-
-    # 创建一个临时的最小镜像来测试推送权限
-    echo "FROM scratch" > /tmp/test.dockerfile
-
-    if docker buildx build --platform linux/amd64 -f /tmp/test.dockerfile -t "$test_repo" --dry-run . >/dev/null 2>&1; then
-        log_success "Docker登录验证成功"
-        rm -f /tmp/test.dockerfile
-        return 0
-    else
-        # 如果dry-run不支持，尝试其他方法
-        log_info "使用备用验证方法..."
-
-        # 简单地检查是否能执行docker命令且显示Login Succeeded
-        if docker system info >/dev/null 2>&1; then
-            log_success "Docker登录验证成功 (用户: $DOCKER_USERNAME)"
-            rm -f /tmp/test.dockerfile 2>/dev/null || true
-            return 0
-        else
-            log_error "Docker登录验证失败"
-            rm -f /tmp/test.dockerfile 2>/dev/null || true
-            return 1
-        fi
-    fi
-}
-
-# 强制重新登录Docker Hub
+# Docker Hub 认证以 docker login 的退出状态为准。
+# 保留现有配置中的 context、credential store 和 Buildx 设置。
 docker_login() {
     log_info "准备登录Docker Hub..."
-
-    # 显示当前登录用户（如果有的话）
-    local current_user=$(get_logged_user)
-    if [ -n "$current_user" ]; then
-        log_warning "当前登录用户: $current_user"
-    fi
-
-    # 强制登出，清除所有缓存的凭据
-    log_info "正在清除Docker登录状态..."
-    docker logout > /dev/null 2>&1 || true
-
-    # 清除Docker配置文件中的凭据（如果存在）
-    if [ -f "$HOME/.docker/config.json" ]; then
-        log_info "备份并清理Docker配置文件..."
-        # 备份原配置文件
-        cp "$HOME/.docker/config.json" "$HOME/.docker/config.json.backup.$(date +%s)" 2>/dev/null || true
-        # 清空auths部分，但保留其他配置
-        echo '{"auths": {}}' > "$HOME/.docker/config.json" 2>/dev/null || true
-    fi
-
-    echo ""
-    log_warning "=== 强制手动登录模式 ==="
     log_info "目标用户名: $DOCKER_USERNAME"
-    log_warning "请确保输入正确的用户名和密码！"
-    echo ""
 
-    # 使用指定用户名强制手动登录
-    MAX_ATTEMPTS=3
-    ATTEMPT=1
-
-    while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-        echo "登录尝试 $ATTEMPT/$MAX_ATTEMPTS"
-        echo "请输入Docker Hub凭据："
-
-        # 强制交互式登录
-        if docker login -u $DOCKER_USERNAME; then
-            log_success "登录命令执行成功"
-
-            # 验证登录状态
-            if verify_login; then
-                log_success "Docker Hub 登录验证成功 - 用户: $DOCKER_USERNAME"
-                return 0
-            else
-                log_error "登录验证失败"
-            fi
-        else
-            log_error "登录失败"
+    local max_attempts=3
+    local attempt=1
+    while [ "$attempt" -le "$max_attempts" ]; do
+        echo "登录尝试 $attempt/$max_attempts"
+        if docker login -u "$DOCKER_USERNAME"; then
+            log_success "Docker Hub 登录成功 - 用户: $DOCKER_USERNAME"
+            return 0
         fi
 
-        if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+        if [ "$attempt" -eq "$max_attempts" ]; then
             log_error "达到最大尝试次数，登录失败"
-            exit 1
+            return 1
         fi
-
-        ATTEMPT=$((ATTEMPT + 1))
-        echo ""
-        log_warning "请重试..."
+        log_warning "Docker Hub 登录失败，请重试..."
+        attempt=$((attempt + 1))
         sleep 2
     done
 }
@@ -201,7 +113,10 @@ docker_login() {
 setup_buildx() {
     log_info "设置Docker buildx构建器..."
 
-    BUILDER_NAME="multiarch-builder"
+    local docker_context
+    docker_context=$(docker context show)
+    BUILDER_NAME="charming-epg-${docker_context}"
+    log_info "Docker context: ${docker_context}，构建器: $BUILDER_NAME"
 
     # 检查构建器是否已存在
     if docker buildx inspect "$BUILDER_NAME" &> /dev/null; then
@@ -209,11 +124,18 @@ setup_buildx() {
         docker buildx use "$BUILDER_NAME"
     else
         log_info "创建新的构建器: $BUILDER_NAME"
-        docker buildx create --name "$BUILDER_NAME" --use
+        docker buildx create --name "$BUILDER_NAME" --driver docker-container --use "$docker_context"
     fi
 
     log_info "启动构建器..."
-    docker buildx inspect --bootstrap
+    local builder_info node_status
+    builder_info=$(docker buildx inspect "$BUILDER_NAME" --bootstrap)
+    printf '%s\n' "$builder_info"
+    node_status=$(printf '%s\n' "$builder_info" | awk '/^[[:space:]]*Status:/ {print $2}')
+    if [ "$node_status" != "running" ]; then
+        log_error "构建器未就绪 (状态: $node_status)，请检查上述 endpoint 和连接错误"
+        return 1
+    fi
 
     log_success "构建器设置完成"
 }
@@ -240,6 +162,7 @@ build_multiarch() {
     fi
 
     docker buildx build \
+        --builder "$BUILDER_NAME" \
         --pull \
         --no-cache \
         --platform linux/amd64,linux/arm64 \
@@ -263,30 +186,20 @@ verify_image() {
     log_success "镜像验证完成"
 }
 
-# 清理函数
-cleanup() {
-    # 清理临时文件
-    rm -f /tmp/test.dockerfile 2>/dev/null || true
-    log_info "清理完成"
-}
-
 # 主函数
 main() {
     echo "=================================="
     echo "  多架构Docker镜像构建脚本"
     echo "  支持架构: AMD64, ARM64"
     echo "  统一Dockerfile构建"
-    echo "  强制手动登录模式"
+    echo "  Docker Hub 手动登录"
     echo "=================================="
     echo ""
-
-    # 设置错误时的清理
-    trap cleanup EXIT
 
     check_requirements
     get_user_input
     check_dockerfile
-    docker_login  # 强制重新登录
+    docker_login
     setup_buildx
     build_multiarch
     verify_image
