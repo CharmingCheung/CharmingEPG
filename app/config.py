@@ -33,6 +33,9 @@ class Config:
     PROXY_HTTP = os.getenv("PROXY_HTTP")
     PROXY_HTTPS = os.getenv("PROXY_HTTPS")
 
+    # Optional egress override for the Cloudflare-protected 4GTV website.
+    FOURGTV_PROXY = os.getenv("FOURGTV_PROXY")
+
     # Singtel-specific proxy (Singtel API is geo-restricted to Singapore IPs)
     # Supports http://, https://, socks5://, socks5h:// URL schemes
     # Example: socks5://user:pass@host:1080 or http://host:8080

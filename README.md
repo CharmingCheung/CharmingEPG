@@ -168,6 +168,12 @@ docker run -d \
   charmingcheung000/charming-epg:latest
 ```
 
+4GTV 的频道列表和节目页请求会使用 `PROXY_HTTP` / `PROXY_HTTPS`。
+如果服务器出口持续收到 403，可单独设置 `FOURGTV_PROXY`（支持 HTTP/SOCKS，
+例如 `socks5h://127.0.0.1:1080`）覆盖通用代理。Docker 部署请将该变量传入容器，
+并使用容器可访问的代理地址。每轮累计 5 次 403 后会结束本轮抓取、保留旧数据，
+避免反复退避阻塞后续更新。
+
 ### Request
 
 #### 请求所有平台

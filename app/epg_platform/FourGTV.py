@@ -27,7 +27,7 @@ RE_TAGS = re.compile(r"<[^>]+>")
 
 
 class _GaveUp(Exception):
-    """连续撞 429 达到上限，放弃本次整轮抓取，避免落地不完整数据"""
+    """受阻达到上限，放弃本次整轮抓取，避免落地不完整数据"""
     pass
 
 
@@ -55,6 +55,7 @@ class FourGTVPlatform(BaseEPGPlatform):
     BACKOFF_429 = 600              # 撞 429 退避 (秒)
     SLOWDOWN_429 = 1.60            # 已在安全档之上时再放慢的倍数
     MAX_429 = 2                    # 累计撞满这么多次 429 就放弃本次抓取
+    MAX_403 = 5                    # CF 持续拦截时结束整轮，避免间隔指数增长
     PENALTY_MERGE = 20.0           # 同一次限速事件的去重窗口
     MAX_RETRIES = 3
     PROGRESS_EVERY = 10           # 每 N 个频道打印一次进度心跳
@@ -70,9 +71,22 @@ class FourGTVPlatform(BaseEPGPlatform):
 
     @staticmethod
     def _get_ua() -> str:
-        v = random.choice(["120.0.0.0", "121.0.0.0", "122.0.0.0", "123.0.0.0", "124.0.0.0"])
+        # Keep UA stable and consistent with impersonate="chrome120". Changing
+        # browser identity while reusing cookies can trigger bot protection.
         return (f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                f"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{v} Safari/537.36")
+                f"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+    @staticmethod
+    def _get_proxies():
+        proxy = (Config.FOURGTV_PROXY or "").strip()
+        if proxy:
+            return {"http": proxy, "https": proxy}
+        return Config.get_proxies()
+
+    def _close_session(self):
+        if self._session is not None:
+            self._session.close()
+            self._session = None
 
     async def fetch_channels(self) -> List[Channel]:
         """Fetch the channel list from the 4GTV JSON API"""
@@ -91,6 +105,7 @@ class FourGTVPlatform(BaseEPGPlatform):
                 self.CHANNEL_LIST_API,
                 headers={"User-Agent": self._get_ua()},
                 timeout=Config.HTTP_TIMEOUT,
+                proxies=self._get_proxies(),
                 verify=True,
                 # CVE-2026-92392: disable HTTP/2 until bundled libcurl is patched.
                 http_version=CurlHttpVersion.V1_1,
@@ -142,7 +157,7 @@ class FourGTVPlatform(BaseEPGPlatform):
         self._n_429 = 0
         self._n_403 = 0
         self._penalty_until = 0.0
-        self._session = None
+        self._close_session()
 
         # 粗略预估耗时：每频道间隔 + 批间休息，让用户对总时长有预期
         est_minutes = (total * self._spacing + max(0, (total - 1) // self.BATCH_SIZE) * self._pause) / 60
@@ -192,7 +207,7 @@ class FourGTVPlatform(BaseEPGPlatform):
 
                 await asyncio.sleep(self._spacing * random.uniform(*self.JITTER_SPACING))
         except _GaveUp:
-            self.logger.error("❌ 4GTV 连续撞 429 达到上限，放弃本次抓取")
+            self.logger.error("❌ 4GTV 受阻达到上限，放弃本次抓取并保留旧数据")
             raise
 
         self.logger.info(
@@ -213,7 +228,10 @@ class FourGTVPlatform(BaseEPGPlatform):
         from curl_cffi import CurlHttpVersion
 
         # CVE-2026-92392 also applies to the libcurl bundled in curl_cffi.
-        session = cffi_requests.Session(http_version=CurlHttpVersion.V1_1)
+        session = cffi_requests.Session(
+            http_version=CurlHttpVersion.V1_1,
+            proxies=self._get_proxies(),
+        )
         try:
             session.get(
                 self.REFERER,
@@ -222,8 +240,8 @@ class FourGTVPlatform(BaseEPGPlatform):
                 verify=True,
                 impersonate="chrome120",
             )
-        except Exception:
-            pass  # 预热失败不影响后续正式请求
+        except Exception as error:
+            self.logger.warning(f"⚠️ 4GTV 会话预热失败 ({type(error).__name__})")
         self._session = session
         return session
 
@@ -255,12 +273,14 @@ class FourGTVPlatform(BaseEPGPlatform):
     def _on_403(self):
         """撞 403 (CF 拦截)：退避、放慢节奏、丢弃 session 强制下次重建+重新预热"""
         self._n_403 += 1
+        if self._n_403 >= self.MAX_403:
+            raise _GaveUp(f"累计 {self._n_403} 次 403 CF拦截")
         now = time.time()
         if now < self._penalty_until:
             return
         self._penalty_until = now + self.PENALTY_MERGE
         self._spacing *= 1.3
-        self._session = None
+        self._close_session()
         self.logger.warning(f"⚠️ 4GTV 403 CF拦截, 退避 60s, 放慢到 {self._spacing:.1f}s/个")
         time.sleep(60)
 
@@ -297,6 +317,13 @@ class FourGTVPlatform(BaseEPGPlatform):
                     continue
 
                 if r.status_code == 403:
+                    self.logger.warning(
+                        f"⚠️ 4GTV 页面访问被拒绝: {url} "
+                        f"(server={r.headers.get('server', 'unknown')}, "
+                        f"cf-mitigated={r.headers.get('cf-mitigated', 'none')}, "
+                        f"代理={'已配置' if self._get_proxies() else '未配置'}); "
+                        "持续失败时请检查服务器出口，可配置 FOURGTV_PROXY"
+                    )
                     self._on_403()
                     continue
 
