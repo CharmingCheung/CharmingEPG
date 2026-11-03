@@ -1,5 +1,5 @@
 #从官方Python基础镜像开始。
-FROM python:3.12.15-slim-trixie
+FROM python:3.15.0-slim-trixie
 
 # 应用 Debian 已发布的安全修复；发布时配合 --pull --no-cache 避免旧层缓存。
 RUN apt-get update \
